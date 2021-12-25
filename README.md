@@ -10,7 +10,16 @@ The Python implementation seems easy for further improvements and self adaptatio
 Copy enc28j60.py to your board into /enc28j60 directory.
 
 ## Wiring
-To be done...
+Wiring requires pins for SPI: SCK, MISO, MOSI and ChipSelect and Interrupt.
+Example wiring that uses SPI1 bus:
+
+| ENC28J60 Module | Rassperry Pi Pico | Notes |
+| :-------------: |:-------------:| ---- |
+| SCK | GP10 | SPI1 SCK |
+| SI | GP11 | SPI1 MOSI/TX |
+| SO | GP8 | SPI1 MISO/RX |
+| CS | GP13 | SPI1 CSn |
+| INT | GP15 | Optional |
 
 ## Example Code
 To be done...
