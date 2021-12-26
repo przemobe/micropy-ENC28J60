@@ -491,7 +491,7 @@ class ENC28J60:
 
         #self.init()
 
-    def getMacAddr():
+    def getMacAddr(self):
         return self.macAddr
 
     def init(self):
@@ -598,21 +598,6 @@ class ENC28J60:
 
         # Set RXEN to enable reception
         self.WriteReg(ENC28J60_ECON1, ENC28J60_ECON1_RXEN)
-
-        #//Dump registers for debugging purpose
-        #enc28j60DumpReg(interface);
-        #enc28j60DumpPhyReg(interface);
-
-        #//Accept any packets from the upper layer
-        #osSetEvent(&interface->nicTxEvent);
-
-        #//Force the TCP/IP stack to poll the link state at startup
-        #interface->nicEvent = TRUE;
-        #//Notify the TCP/IP stack of the event
-        #osSetEvent(&netEvent);
-
-        #//Successful initialization
-        #return NO_ERROR;
 
     def write(self, data):
         self.cs(0)
@@ -765,12 +750,12 @@ class ENC28J60:
         # Check the frame length
         if length > 1536:
             print('TX length > 1536')
-            return False
+            return -1
 
         # Make sure the link is up before transmitting the frame
         if False == self.IsLinkUp():
             print('Link is down')
-            return False
+            return -2
 
         # It is recommended to reset the transmit logic before attempting to transmit a packet
         self.SetBit(ENC28J60_ECON1, ENC28J60_ECON1_TXRST)
@@ -796,7 +781,7 @@ class ENC28J60:
 
         # Start transmission
         self.SetBit(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS)
-        return True
+        return length
 
     def ReceivePacket(self, data):
         data[:] = bytearray(0)
