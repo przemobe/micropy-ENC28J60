@@ -23,6 +23,10 @@ Example wiring that uses SPI1 bus:
 | CS | GP13 | SPI1 CSn |
 | INT | GP15 | Optional |
 
+## To do
+ - interrupt handler
+
+
 ## Example code
 
 ### Packet transmission
@@ -54,6 +58,9 @@ from enc28j60 import enc28j60
 spi1 = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
 eth = enc28j60.ENC28J60(spi1, Pin(13))
 eth.init()
+
+print("myMac:", ":".join("{:02x}".format(c) for c in eth.getMacAddr()))
+print("ENC28J60 revision ID: 0x{:02x}".format(eth.GetRevId()))
 
 pkt = bytearray()
 

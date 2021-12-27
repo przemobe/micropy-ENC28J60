@@ -464,6 +464,7 @@ class ENC28J60:
 
     def __init__(self, spi, cs, irq=None, macAddr=None, cb=CallBack()):
         self.ENC28J60_FULL_DUPLEX_SUPPORT = True
+        self.revId = None
 
         # SPI
         self.spi = spi
@@ -474,7 +475,6 @@ class ENC28J60:
             self.macAddr = bytearray(macAddr)
         else:
             self.macAddr = bytearray(b'\x0e\x5f\x5f' + unique_id()[-3:])
-        print("MAC ADDR:", ":".join("{:02x}".format(c) for c in self.macAddr))
 
         # PIN CS
         self.cs = cs
@@ -506,8 +506,7 @@ class ENC28J60:
         self.nextPacket = ENC28J60_RX_BUFFER_START
 
         # Read silicon revision ID
-        revisionId = self.ReadReg(ENC28J60_EREVID)
-        print("ENC28J60 revision ID: 0x{:02x}".format(revisionId))
+        self.revId = self.ReadReg(ENC28J60_EREVID) & ENC28J60_EREVID_REV
 
         # Disable CLKOUT output
         self.WriteReg(ENC28J60_ECOCON, ENC28J60_ECOCON_COCON_DISABLED);
@@ -735,6 +734,11 @@ class ENC28J60:
         # Terminate the operation by raising the CS pin
         self.cs(1)
 
+    def GetRevId(self):
+        if None == self.revId:
+            self.revId = self.ReadReg(ENC28J60_EREVID) & ENC28J60_EREVID_REV
+        return self.revId
+
     def IsLinkUp(self):
         return 0 != (self.ReadPhyReg(ENC28J60_PHSTAT2) & ENC28J60_PHSTAT2_LSTAT)
 
@@ -749,12 +753,12 @@ class ENC28J60:
 
         # Check the frame length
         if length > 1536:
-            print('TX length > 1536')
+            # TX length > 1536
             return -1
 
         # Make sure the link is up before transmitting the frame
         if False == self.IsLinkUp():
-            print('Link is down')
+            # Link is down
             return -2
 
         # It is recommended to reset the transmit logic before attempting to transmit a packet
@@ -818,7 +822,7 @@ class ENC28J60:
             self.ReadBuffer(data)
         else:
             # The received packet contains an error
-            print('RX packet error') # TODO
+            pass
 
         # Advance the ERXRDPT pointer, taking care to wrap back at the end of the received memory buffer
         if ENC28J60_RX_BUFFER_START == self.nextPacket:
