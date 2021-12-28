@@ -465,6 +465,8 @@ class ENC28J60:
     def __init__(self, spi, cs, irq=None, macAddr=None, cb=CallBack()):
         self.ENC28J60_FULL_DUPLEX_SUPPORT = True
         self.revId = None
+        self.tmpBytearray1B = bytearray(1)
+        self.tmpBytearray6B = bytearray(6)
 
         # SPI
         self.spi = spi
@@ -656,17 +658,16 @@ class ENC28J60:
 
         # When reading MAC or MII registers, a dummy byte is first shifted out
         if (address & REG_TYPE_MASK) != ETH_REG_TYPE:
-            self.spi.write(bytearray(1))
+            self.spi.write(self.tmpBytearray1B)
 
         # Read register contents
-        data = bytearray(1)
-        self.spi.readinto(data)
+        self.spi.readinto(self.tmpBytearray1B)
 
         # Terminate the operation by raising the CS pin
         self.cs(1)
 
         # Return register contents
-        return data[0]
+        return self.tmpBytearray1B[0]
 
     def WritePhyReg(self, address, data):
         # Write register address
@@ -787,21 +788,19 @@ class ENC28J60:
         self.SetBit(ENC28J60_ECON1, ENC28J60_ECON1_TXRTS)
         return length
 
-    def ReceivePacket(self, data):
-        data[:] = bytearray(0)
+    def ReceivePacket(self, rxBuffer):
         if 0 == self.GetRxPacketCnt():
-            return
+            return 0
 
         # Point to the start of the received packet
         self.WriteReg(ENC28J60_ERDPTL, LSB(self.nextPacket))
         self.WriteReg(ENC28J60_ERDPTH, MSB(self.nextPacket))
 
         # The packet is preceded by a 6-byte header
-        header = bytearray(6)
-        self.ReadBuffer(header)
+        self.ReadBuffer(self.tmpBytearray6B)
 
         # Unpack header, little-endian
-        headerStruct = struct.unpack("<HHH", header)
+        headerStruct = struct.unpack("<HHH", self.tmpBytearray6B)
 
         # The first two bytes are the address of the next packet
         self.nextPacket = headerStruct[0]
@@ -816,13 +815,13 @@ class ENC28J60:
         if 0 != (status & ENC28J60_RSV_RECEIVED_OK):
             # Limit the number of data to read
             length = min(length, ENC28J60_ETH_RX_BUFFER_SIZE)
+            length = min(length, len(rxBuffer))
 
             # Read the Ethernet frame
-            data[:] = bytearray(length)
-            self.ReadBuffer(data)
+            self.ReadBuffer(memoryview(rxBuffer)[0:length])
         else:
             # The received packet contains an error
-            pass
+            length = -1
 
         # Advance the ERXRDPT pointer, taking care to wrap back at the end of the received memory buffer
         if ENC28J60_RX_BUFFER_START == self.nextPacket:
@@ -834,7 +833,7 @@ class ENC28J60:
 
         # Decrement the packet counter
         self.SetBit(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC)
-        return
+        return length
 
     def onInterrupt(self, pin):
         # Read interrupt status register

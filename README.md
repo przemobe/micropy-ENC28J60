@@ -62,9 +62,9 @@ eth.init()
 print("myMac:", ":".join("{:02x}".format(c) for c in eth.getMacAddr()))
 print("ENC28J60 revision ID: 0x{:02x}".format(eth.GetRevId()))
 
-pkt = bytearray()
+rxBuf = bytearray(enc28j60.ENC28J60_ETH_RX_BUFFER_SIZE)
 
 while eth.GetRxPacketCnt():
-	eth.ReceivePacket(pkt)
-	print('srcMac:', ":".join("{:02x}".format(c) for c in pkt[6:12]))
+    rxLen = eth.ReceivePacket(rxBuf)
+    print('rxLen:', rxLen, 'srcMac:', ":".join("{:02x}".format(c) for c in rxBuf[6:12]))
 ```
