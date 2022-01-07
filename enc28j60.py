@@ -443,26 +443,12 @@ def MSB(val):
     return ((val >> 8) & 0xFF)
 
 
-class CallBack:
-    '''
-    This class provides interface for callback functions for ENC28J60.
-    '''
-    def onLinkUp(self):
-        pass
-
-    def onLinkDown(self):
-        pass
-
-    def onRxPacket(self, pkt):
-        pass
-
-
 class ENC28J60:
     '''
     This class provides control over ENC28J60 Ethernet chips.
     '''
 
-    def __init__(self, spi, cs, irq=None, macAddr=None, cb=CallBack()):
+    def __init__(self, spi, cs, macAddr=None):
         self.ENC28J60_FULL_DUPLEX_SUPPORT = True
         self.revId = None
         self.tmpBytearray1B = bytearray(1)
@@ -481,15 +467,6 @@ class ENC28J60:
         # PIN CS
         self.cs = cs
         self.cs.init(Pin.OUT, value=1)
-
-        # PIN irq
-        if None != irq:
-            self.irq = irq
-            self.irq.init(Pin.IN)
-            self.irq.irq(trigger=Pin.IRQ_FALLING, handler=self.onInterrupt)
-
-        # Callback
-        self.cb = cb
 
         #self.init()
 
@@ -592,7 +569,8 @@ class ENC28J60:
         self.WriteReg(ENC28J60_EIR, 0x00);
 
         # Configure interrupts as desired
-        self.WriteReg(ENC28J60_EIE, ENC28J60_EIE_INTIE | ENC28J60_EIE_PKTIE | ENC28J60_EIE_LINKIE | ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE)
+        self.WriteReg(ENC28J60_EIE, ENC28J60_EIE_INTIE | ENC28J60_EIE_PKTIE | ENC28J60_EIE_LINKIE)
+        # | ENC28J60_EIE_TXIE | ENC28J60_EIE_TXERIE)
 
         # Configure PHY interrupts as desired
         self.WritePhyReg(ENC28J60_PHIE, ENC28J60_PHIE_PLNKIE | ENC28J60_PHIE_PGEIE)
@@ -834,37 +812,3 @@ class ENC28J60:
         # Decrement the packet counter
         self.SetBit(ENC28J60_ECON2, ENC28J60_ECON2_PKTDEC)
         return length
-
-    def onInterrupt(self, pin):
-        # Read interrupt status register
-        status = self.ReadReg(ENC28J60_EIR)
-
-        # Check whether the link state has changed
-        if 0 != (status & ENC28J60_EIR_LINKIF):
-            # Clear PHY interrupts flags
-            self.ReadPhyReg(ENC28J60_PHIR)
-
-            # Clear interrupt flag
-            self.ClearBit(ENC28J60_EIR, ENC28J60_EIR_LINKIF)
-
-            # Check link state
-            if self.IsLinkUp():
-                self.cb.onLinkUp()
-            else:
-                self.cb.onLinkDown()
-
-        # Check whether a packet has been received
-        if 0 != self.GetRxPacketCnt():
-            # Clear interrupt flag
-            self.ClearBit(ENC28J60_EIR, ENC28J60_EIR_PKTIF)
-
-        pkt = bytearray()
-        while 0 != self.GetRxPacketCnt():
-            # Process all pending packets
-            self.ReceivePacket(pkt)
-            if 0 < len(pkt):
-                self.cb.onRxPacket(pkt)
-
-        # Re-enable LINKIE and PKTIE interrupts
-        self.SetBit(ENC28J60_EIE, ENC28J60_EIE_LINKIE | ENC28J60_EIE_PKTIE)
-
