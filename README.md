@@ -68,3 +68,35 @@ while eth.GetRxPacketCnt():
     rxLen = eth.ReceivePacket(rxBuf)
     print('rxLen:', rxLen, 'srcMac:', ":".join("{:02x}".format(c) for c in rxBuf[6:12]))
 ```
+
+### IPv4 simple suite for polling mode
+
+Please refer to examples/Ntw.py file for details.
+
+The file contains roughly written procedures for handling IP protocols in polling mode:
+- IPv4 for not fragmented packets only, single static IP address
+- ARP for IPv4 over Ethernet, simple ARP table
+- ICMPv4: rx Echo Request and tx Echo Response
+- UDPv4: rx and tx
+- Simple UDP Echo server
+
+MicroPython v1.17 for Raspberry Pi Pico does not include socket library.
+It also does not allow to run more than 2 threads at the time.
+It is hard to mimic network sockets in such environment. So polling mode seems reasonable solution.
+
+```python
+if __name__ == '__main__':
+    # Create network and initialize Ethernet driver
+    ntw = Ntw()
+
+    # Create UDP Echo server
+    udpecho = Udp4EchoServer(ntw)
+
+    # Bind UDP Echo server to UDP port 7
+    ntw.registerUdp4Callback(7, udpecho)
+
+    # main loop
+    while True:
+        # Receive and process packets
+        ntw.rxAllPkt()
+```
