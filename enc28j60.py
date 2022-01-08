@@ -453,6 +453,7 @@ class ENC28J60:
         self.revId = None
         self.tmpBytearray1B = bytearray(1)
         self.tmpBytearray2B = bytearray(2)
+        self.tmpBytearray3B = bytearray(3)
         self.tmpBytearray6B = bytearray(6)
 
         # SPI
@@ -639,22 +640,29 @@ class ENC28J60:
         # Pull the CS pin low
         self.cs(0)
 
-        # Write opcode and register address
-        self.tmpBytearray1B[0] = (ENC28J60_CMD_RCR | (address & REG_ADDR_MASK))
-        self.spi.write(self.tmpBytearray1B)
-
-        # When reading MAC or MII registers, a dummy byte is first shifted out
+        data = 0
         if (address & REG_TYPE_MASK) != ETH_REG_TYPE:
-            self.spi.write(self.tmpBytearray1B)
-
-        # Read register contents
-        self.spi.readinto(self.tmpBytearray1B)
+            # Write opcode and register address
+            self.tmpBytearray3B[0] = (ENC28J60_CMD_RCR | (address & REG_ADDR_MASK))
+            # When reading MAC or MII registers, a dummy byte is first shifted out
+            self.tmpBytearray3B[1] = 0
+            # Read register contents
+            self.tmpBytearray3B[2] = 0
+            self.spi.write_readinto(self.tmpBytearray3B, self.tmpBytearray3B)
+            data = self.tmpBytearray3B[2]
+        else:
+            # Write opcode and register address
+            self.tmpBytearray2B[0] = (ENC28J60_CMD_RCR | (address & REG_ADDR_MASK))
+            # Read register contents
+            self.tmpBytearray2B[1] = 0
+            self.spi.write_readinto(self.tmpBytearray2B, self.tmpBytearray2B)
+            data = self.tmpBytearray2B[1]
 
         # Terminate the operation by raising the CS pin
         self.cs(1)
 
         # Return register contents
-        return self.tmpBytearray1B[0]
+        return data
 
     def WritePhyReg(self, address, data):
         # Write register address

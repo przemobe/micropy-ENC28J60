@@ -58,7 +58,7 @@ def procArp(pkt):
         if tpa == pkt.ntw.myIp4Addr:
             print(f'Rx ARP_REQUEST for my IP from IP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]}!')
             reply = makeArpReply(pkt.eth_src, pkt.ntw.myMacAddr, pkt.ntw.myIp4Addr, spa)
-            n = pkt.ntw.nic.SendPacket(reply)
+            n = pkt.ntw.txPkt(reply)
             if 0 > n:
                 print(f'Fail to send ARP REPLY {n}')
     elif ARP_OP_REPLY == oper:
@@ -151,7 +151,7 @@ def sendIcmp4EchoReply(pkt):
     rsp.append(ipHdr)
     rsp.append(icmpRepl)
 
-    n = pkt.ntw.nic.SendPacket(rsp)
+    n = pkt.ntw.txPkt(rsp)
     return n
 
 
