@@ -452,6 +452,7 @@ class ENC28J60:
         self.ENC28J60_FULL_DUPLEX_SUPPORT = True
         self.revId = None
         self.tmpBytearray1B = bytearray(1)
+        self.tmpBytearray2B = bytearray(2)
         self.tmpBytearray6B = bytearray(6)
 
         # SPI
@@ -584,13 +585,18 @@ class ENC28J60:
         self.cs(1)
 
     def SoftReset(self):
-        self.write(bytearray([ENC28J60_CMD_SRC]))
+        self.tmpBytearray1B[0] = ENC28J60_CMD_SRC
+        self.write(self.tmpBytearray1B)
 
     def ClearBit(self, address, mask):
-        self.write(bytearray([(ENC28J60_CMD_BFC | (address & REG_ADDR_MASK)), mask]))
+        self.tmpBytearray2B[0] = (ENC28J60_CMD_BFC | (address & REG_ADDR_MASK))
+        self.tmpBytearray2B[1] = mask
+        self.write(self.tmpBytearray2B)
 
     def SetBit(self, address, mask):
-        self.write(bytearray([(ENC28J60_CMD_BFS | (address & REG_ADDR_MASK)), mask]))
+        self.tmpBytearray2B[0] = (ENC28J60_CMD_BFS | (address & REG_ADDR_MASK))
+        self.tmpBytearray2B[1] = mask
+        self.write(self.tmpBytearray2B)
 
     def SelectBank(self, address):
         # uint16_t address
@@ -621,7 +627,9 @@ class ENC28J60:
         self.SelectBank(address)
 
         # Write opcode and register address, Write register value
-        self.write(bytearray([(ENC28J60_CMD_WCR | (address & REG_ADDR_MASK)), data]))
+        self.tmpBytearray2B[0] = (ENC28J60_CMD_WCR | (address & REG_ADDR_MASK))
+        self.tmpBytearray2B[1] = data
+        self.write(self.tmpBytearray2B)
         return
 
     def ReadReg(self, address):
@@ -632,7 +640,8 @@ class ENC28J60:
         self.cs(0)
 
         # Write opcode and register address
-        self.spi.write(bytearray([ENC28J60_CMD_RCR | (address & REG_ADDR_MASK)]))
+        self.tmpBytearray1B[0] = (ENC28J60_CMD_RCR | (address & REG_ADDR_MASK))
+        self.spi.write(self.tmpBytearray1B)
 
         # When reading MAC or MII registers, a dummy byte is first shifted out
         if (address & REG_TYPE_MASK) != ETH_REG_TYPE:
@@ -687,11 +696,10 @@ class ENC28J60:
         # Pull the CS pin low
         self.cs(0)
 
-        # Write opcode
-        self.spi.write(bytearray([ENC28J60_CMD_WBM]))
-
-        # Write per-packet control byte
-        self.spi.write(bytearray([0x00]))
+        # Write opcode, Write per-packet control byte
+        self.tmpBytearray2B[0] = ENC28J60_CMD_WBM
+        self.tmpBytearray2B[1] = 0x00
+        self.spi.write(self.tmpBytearray2B)
 
         # Loop through data chunks
         for data in chunks:
@@ -705,7 +713,8 @@ class ENC28J60:
         self.cs(0)
 
         # Write opcode
-        self.spi.write(bytearray([ENC28J60_CMD_RBM]))
+        self.tmpBytearray1B[0] = ENC28J60_CMD_RBM
+        self.spi.write(self.tmpBytearray1B)
 
         # Copy data from SRAM buffer
         self.spi.readinto(data)
