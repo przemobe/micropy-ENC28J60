@@ -31,6 +31,8 @@ ARP_OP_REPLY   = const(2)
 IP4_TYPE_ICMP = const(1)
 IP4_TYPE_TCP  = const(6)
 IP4_TYPE_UDP  = const(17)
+IP4_ADDR_BCAST  = bytearray([255,255,255,255])
+IP4_ADDR_ZERO   = bytearray([0,0,0,0])
 
 ICMP4_ECHO_REPLY    = const(0)
 ICMP4_UNREACHABLE   = const(3)
@@ -174,10 +176,9 @@ def procIp4(pkt):
     pkt.ip_proto = ip_hdr[6]
     pkt.ip_offset = pkt.eth_offset + pkt.ip_hdrlen
     pkt.ip_maxoffset = pkt.eth_offset + pkt.ip_totlen
+    pkt.ntw.ip4RxCount += 1
 
     #print('ip_hdr', ip_hdr, pkt.ip_hdrlen, pkt.ip_dst_addr[0], pkt.ip_dst_addr[1], pkt.ip_dst_addr[2], pkt.ip_dst_addr[3])
-    if pkt.ip_dst_addr != pkt.ntw.myIp4Addr:
-        return
 
     if 4 != pkt.ip_ver:
         print('ip_ver={pkt.ip_ver} not supported!')
@@ -188,7 +189,9 @@ def procIp4(pkt):
         return
 
     #chksm = calcChecksum(pkt.frame[offset:offset+pkt.ip_hdrlen])
-    #print(f'IPv4 chksm={chksm}')
+    #if 0 != chksm:
+        #print(f'IPv4 chksm={chksm} invalid!')
+        #return
 
     flags_mf = (ip_hdr[4] >> 13) & 0x01
     fragOffset = (ip_hdr[4] & 0x1FFF) << 3
@@ -196,13 +199,17 @@ def procIp4(pkt):
         print(f'Fragmented IPv4 not supported: fragOffset={fragOffset}, flags_mf={flags_mf}')
         return
 
-    print(f'Rx my IP proto={pkt.ip_proto}')
-    if IP4_TYPE_ICMP == pkt.ip_proto:
-        procIcmp4(pkt)
-    elif IP4_TYPE_TCP == pkt.ip_proto:
-        pass
-    elif IP4_TYPE_UDP == pkt.ip_proto:
-        procUdp4(pkt)
+    if pkt.ip_dst_addr == pkt.ntw.myIp4Addr:
+        print(f'Rx my IP proto={pkt.ip_proto}')
+        if IP4_TYPE_ICMP == pkt.ip_proto:
+            procIcmp4(pkt)
+        elif IP4_TYPE_TCP == pkt.ip_proto:
+            pass
+        elif IP4_TYPE_UDP == pkt.ip_proto:
+            procUdp4(pkt, bcast=False)
+    elif pkt.ip_dst_addr == IP4_ADDR_BCAST:
+        if IP4_TYPE_UDP == pkt.ip_proto:
+            procUdp4(pkt, bcast=True)
 
 
 def printEthPkt(pkt):
@@ -253,14 +260,24 @@ def makeUdp4Hdr(srcIp, srcPort, dstIp, dstPort, data):
     return udpHdr
 
 
-def procUdp4(pkt):
+def procUdp4(pkt, bcast=False):
     offset = pkt.ip_offset
     pkt.udp_srcPort, pkt.udp_dstPort, udpLen, chksm_rx = struct.unpack('!HHHH', pkt.frame[offset:offset+8])
     pkt.udp_dataLen = udpLen - 8
     pkt.udp_data = memoryview(pkt.frame[offset+8:offset+udpLen])
 
+    # find UDP client
+    cb = None
+    if (False == bcast) and (pkt.udp_dstPort in pkt.ntw.udp4UniBind):
+        cb = pkt.ntw.udp4UniBind[pkt.udp_dstPort]
+    elif (True == bcast) and (pkt.udp_dstPort in pkt.ntw.udp4BcastBind):
+        cb = pkt.ntw.udp4BcastBind[pkt.udp_dstPort]
+
+    if None == cb:
+        return
+
+    # verify checksum
     if (0 != chksm_rx):
-        # verify checksum
         chksm = sum(struct.unpack('!HH', pkt.ip_src_addr))
         chksm += sum(struct.unpack('!HH', pkt.ip_dst_addr))
         chksm += IP4_TYPE_UDP + 2*udpLen + pkt.udp_srcPort + pkt.udp_dstPort
@@ -270,29 +287,42 @@ def procUdp4(pkt):
         if (chksm != chksm_rx):
             print(f'Invalid UDP chksm: rx={chksm_rx:04X} calc=0x{chksm:04X}')
             return
-    # find and call UDP client
-    if pkt.udp_dstPort in pkt.ntw.udp4bind:
-        pkt.ntw.udp4bind[pkt.udp_dstPort](pkt)
+
+    # call UDP client
+    cb(pkt)
 
 
 class Ntw:
-    def __init__(self, ip4Addr=bytearray([192,168,40,233])):
+    def __init__(self):
         self.rxBuff = bytearray(enc28j60.ENC28J60_ETH_RX_BUFFER_SIZE)
         self.spi1 = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
         self.nic = enc28j60.ENC28J60(self.spi1, Pin(13))
 
+        # Eth settings
         self.myMacAddr = self.nic.getMacAddr()
-        self.myIp4Addr = ip4Addr
-        #self.netIp4Mask = bytearray([255,255,255,0]) # TODO
-        #self.gwIp4Addr = bytearray([192,168,40,1]) # TODO
+
+        # IPv4 settings
+        self.myIp4Addr = bytearray(4)
+        self.netIp4Mask = bytearray(4)
+        self.gwIp4Addr = bytearray(4)
+
+        # Stats
         self.ip4TxCount = 0
+        self.ip4RxCount = 0
+
         self.arpTable = {}
-        self.udp4bind = {}  # {port:callback(Pkt)}
+        self.udp4UniBind = {}   # {port:callback(Pkt)}
+        self.udp4BcastBind = {} # {port:callback(Pkt)}
 
         self.nic.init()
 
         print("MAC ADDR:", ":".join("{:02x}".format(c) for c in self.myMacAddr))
         print("ENC28J60 revision ID: 0x{:02x}".format(self.nic.GetRevId()))
+
+    def setIPv4(self, myIp4Addr, netIp4Mask, gwIp4Addr):
+        self.myIp4Addr = bytearray(myIp4Addr)
+        self.netIp4Mask = bytearray(netIp4Mask)
+        self.gwIp4Addr = bytearray(gwIp4Addr)
 
     def rxAllPkt(self):
         '''Function to rx and process all pending packets from NIC'''
@@ -318,9 +348,15 @@ class Ntw:
 
     def registerUdp4Callback(self, port, cb):
         if None != cb:
-            self.udp4bind[port] = cb
+            self.udp4UniBind[port] = cb
         else:
-            self.udp4bind.pop(port, None)
+            self.udp4UniBind.pop(port, None)
+
+    def registerUdp4BcastCallback(self, port, cb):
+        if None != cb:
+            self.udp4BcastBind[port] = cb
+        else:
+            self.udp4BcastBind.pop(port, None)
 
     def addArpEntry(self, ip, mac):
         if type(ip) == int:
@@ -362,9 +398,9 @@ class Ntw:
 
     def sendUdp4Bcast(self, tgt_port, src_port, data, src_ip4Addr=None):
         msg = []
-        tgt_ip4Addr = bytearray([255,255,255,255])
+        tgt_ip4Addr = IP4_ADDR_BCAST
         if None == src_ip4Addr:
-            src_ip4Addr = bytearray([0,0,0,0])
+            src_ip4Addr = IP4_ADDR_ZERO
         msg.append(bytearray([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]))
         msg.append(self.myMacAddr)
         msg.append(bytearray([ETH_TYPE_IP4 >> 8, ETH_TYPE_IP4]))
@@ -387,8 +423,13 @@ class Udp4EchoServer:
         pkt.ntw.sendUdp4(pkt.ip_src_addr, pkt.udp_srcPort, pkt.udp_data, pkt.udp_dstPort)
 
 
-if __name__ == '__main__':
+def main():
     ntw = Ntw()
+
+    # Set static IP address
+    ntw.setIPv4([192,168,40,233], [255,255,255,0], [192,168,40,1])
+
+    # Create UDP Echo server
     udpecho = Udp4EchoServer(ntw)
 
     # Bind UDP Echo server to UDP port 7
@@ -396,3 +437,7 @@ if __name__ == '__main__':
 
     while True:
         ntw.rxAllPkt()
+
+
+if __name__ == '__main__':
+    main()
