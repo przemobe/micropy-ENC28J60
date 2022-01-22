@@ -22,6 +22,16 @@ import struct
 # RX buffer size
 ENC28J60_ETH_RX_BUFFER_SIZE          = const(1536)
 
+# RX error codes
+ENC28J60_ETH_RX_ERR_UNSPECIFIED      = const(-1)
+
+# TX buffer size
+ENC28J60_ETH_TX_BUFFER_SIZE          = const(1536)
+
+# TX error codes
+ENC28J60_ETH_TX_ERR_MSGSIZE          = const(-1)
+ENC28J60_ETH_TX_ERR_LINKDOWN         = const(-2)
+
 # Receive and transmit buffers
 ENC28J60_RX_BUFFER_START             = const(0x0000)
 ENC28J60_RX_BUFFER_STOP              = const(0x17FF)
@@ -748,14 +758,12 @@ class ENC28J60:
             length += len(data)
 
         # Check the frame length
-        if length > 1536:
-            # TX length > 1536
-            return -1
+        if length > ENC28J60_ETH_TX_BUFFER_SIZE:
+            return ENC28J60_ETH_TX_ERR_MSGSIZE
 
         # Make sure the link is up before transmitting the frame
         if False == self.IsLinkUp():
-            # Link is down
-            return -2
+            return ENC28J60_ETH_TX_ERR_LINKDOWN
 
         # It is recommended to reset the transmit logic before attempting to transmit a packet
         self.SetBit(ENC28J60_ECON1, ENC28J60_ECON1_TXRST)
@@ -816,7 +824,7 @@ class ENC28J60:
             self.ReadBuffer(memoryview(rxBuffer)[0:length])
         else:
             # The received packet contains an error
-            length = -1
+            length = ENC28J60_ETH_RX_ERR_UNSPECIFIED
 
         # Advance the ERXRDPT pointer, taking care to wrap back at the end of the received memory buffer
         if ENC28J60_RX_BUFFER_START == self.nextPacket:
