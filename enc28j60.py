@@ -458,8 +458,8 @@ class ENC28J60:
     This class provides control over ENC28J60 Ethernet chips.
     '''
 
-    def __init__(self, spi, cs, macAddr=None):
-        self.ENC28J60_FULL_DUPLEX_SUPPORT = True
+    def __init__(self, spi, cs, macAddr = None, fullDuplex = True):
+        self.fullDuplex = fullDuplex
         self.revId = None
         self.tmpBytearray1B = bytearray(1)
         self.tmpBytearray2B = bytearray(2)
@@ -500,7 +500,7 @@ class ENC28J60:
         self.revId = self.ReadReg(ENC28J60_EREVID) & ENC28J60_EREVID_REV
 
         # Disable CLKOUT output
-        self.WriteReg(ENC28J60_ECOCON, ENC28J60_ECOCON_COCON_DISABLED);
+        self.WriteReg(ENC28J60_ECOCON, ENC28J60_ECOCON_COCON_DISABLED)
 
         # Set the MAC address of the station
         self.WriteReg(ENC28J60_MAADR5, self.macAddr[0])
@@ -540,7 +540,7 @@ class ENC28J60:
         self.WriteReg(ENC28J60_MACON1, ENC28J60_MACON1_TXPAUS | ENC28J60_MACON1_RXPAUS | ENC28J60_MACON1_MARXEN)
 
         # Enable automatic padding, always append a valid CRC and check frame length. MAC can operate in half-duplex or full-duplex mode
-        if self.ENC28J60_FULL_DUPLEX_SUPPORT:
+        if self.fullDuplex:
             self.WriteReg(ENC28J60_MACON3, ENC28J60_MACON3_PADCFG_AUTO | ENC28J60_MACON3_TXCRCEN | ENC28J60_MACON3_FRMLNEN | ENC28J60_MACON3_FULDPX)
         else:
             self.WriteReg(ENC28J60_MACON3, ENC28J60_MACON3_PADCFG_AUTO | ENC28J60_MACON3_TXCRCEN | ENC28J60_MACON3_FRMLNEN)
@@ -553,7 +553,7 @@ class ENC28J60:
         self.WriteReg(ENC28J60_MAMXFLH, MSB(ENC28J60_ETH_RX_BUFFER_SIZE))
 
         # Configure the back-to-back inter-packet gap register
-        if self.ENC28J60_FULL_DUPLEX_SUPPORT:
+        if self.fullDuplex:
             self.WriteReg(ENC28J60_MABBIPG, ENC28J60_MABBIPG_DEFAULT_FD)
         else:
             self.WriteReg(ENC28J60_MABBIPG, ENC28J60_MABBIPG_DEFAULT_HD)
@@ -566,7 +566,7 @@ class ENC28J60:
         self.WriteReg(ENC28J60_MACLCON2, ENC28J60_MACLCON2_COLWIN_DEFAULT)
 
         # Set the PHY to the proper duplex mode
-        if self.ENC28J60_FULL_DUPLEX_SUPPORT:
+        if self.fullDuplex:
             self.WritePhyReg(ENC28J60_PHCON1, ENC28J60_PHCON1_PDPXMD)
         else:
             self.WritePhyReg(ENC28J60_PHCON1, 0x0000)
@@ -578,7 +578,7 @@ class ENC28J60:
         #self.WritePhyReg(ENC28J60_PHLCON, ENC28J60_PHLCON_LACFG_LINK | ENC28J60_PHLCON_LBCFG_TX_RX | ENC28J60_PHLCON_LFRQ_40_MS | ENC28J60_PHLCON_STRCH)
 
         # Clear interrupt flags
-        self.WriteReg(ENC28J60_EIR, 0x00);
+        self.WriteReg(ENC28J60_EIR, 0x00)
 
         # Configure interrupts as desired
         self.WriteReg(ENC28J60_EIE, ENC28J60_EIE_INTIE | ENC28J60_EIE_PKTIE | ENC28J60_EIE_LINKIE)
@@ -590,24 +590,24 @@ class ENC28J60:
         # Set RXEN to enable reception
         self.WriteReg(ENC28J60_ECON1, ENC28J60_ECON1_RXEN)
 
-    def write(self, data):
+    def writeSpi(self, data):
         self.cs(0)
         self.spi.write(data)
         self.cs(1)
 
     def SoftReset(self):
         self.tmpBytearray1B[0] = ENC28J60_CMD_SRC
-        self.write(self.tmpBytearray1B)
+        self.writeSpi(self.tmpBytearray1B)
 
     def ClearBit(self, address, mask):
         self.tmpBytearray2B[0] = (ENC28J60_CMD_BFC | (address & REG_ADDR_MASK))
         self.tmpBytearray2B[1] = mask
-        self.write(self.tmpBytearray2B)
+        self.writeSpi(self.tmpBytearray2B)
 
     def SetBit(self, address, mask):
         self.tmpBytearray2B[0] = (ENC28J60_CMD_BFS | (address & REG_ADDR_MASK))
         self.tmpBytearray2B[1] = mask
-        self.write(self.tmpBytearray2B)
+        self.writeSpi(self.tmpBytearray2B)
 
     def SelectBank(self, address):
         # uint16_t address
@@ -629,7 +629,7 @@ class ENC28J60:
         else:
             self.SetBit(ENC28J60_ECON1, ENC28J60_ECON1_BSEL1 | ENC28J60_ECON1_BSEL0)
 
-        #Save bank number
+        # Save bank number
         self.currentBank = bank
         return
 
@@ -640,7 +640,7 @@ class ENC28J60:
         # Write opcode and register address, Write register value
         self.tmpBytearray2B[0] = (ENC28J60_CMD_WCR | (address & REG_ADDR_MASK))
         self.tmpBytearray2B[1] = data
-        self.write(self.tmpBytearray2B)
+        self.writeSpi(self.tmpBytearray2B)
         return
 
     def ReadReg(self, address):
@@ -781,7 +781,7 @@ class ENC28J60:
         self.WriteReg(ENC28J60_EWRPTH, MSB(ENC28J60_TX_BUFFER_START))
 
         # Copy the data to the transmit buffer
-        self.WriteBuffer(chunks);
+        self.WriteBuffer(chunks)
 
         # ETXND should point to the last byte in the data payload
         self.WriteReg(ENC28J60_ETXNDL, LSB(ENC28J60_TX_BUFFER_START + length))

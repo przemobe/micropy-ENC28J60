@@ -100,7 +100,7 @@ def calcChecksum(data, startValue = 0):
         chksm += data[-1] << 8
     chksm = (chksm >> 16) + (chksm & 0xffff)
     chksm += (chksm >> 16)
-    return ~chksm & 0xffff;
+    return ~chksm & 0xffff
 
 
 def makeIp4Hdr(src, tgt, ident, prot, dataLen, ttl=128, dscp=0, ecn=0):
@@ -181,11 +181,11 @@ def procIp4(pkt):
     #print('ip_hdr', ip_hdr, pkt.ip_hdrlen, pkt.ip_dst_addr[0], pkt.ip_dst_addr[1], pkt.ip_dst_addr[2], pkt.ip_dst_addr[3])
 
     if 4 != pkt.ip_ver:
-        print('ip_ver={pkt.ip_ver} not supported!')
+        print(f'ip_ver={pkt.ip_ver} not supported!')
         return
 
     if 20 != pkt.ip_hdrlen:
-        print('ip_hdrlen={pkt.ip_hdrlen} not supported!')
+        print(f'ip_hdrlen={pkt.ip_hdrlen} not supported!')
         return
 
     #chksm = calcChecksum(pkt.frame[offset:offset+pkt.ip_hdrlen])
