@@ -5,7 +5,7 @@
 
 # This is version for MicroPython v1.17
 
-# This file implements very simple IP stack for ENV28J60 ethernet.
+# This file implements very simple IP stack for ENC28J60 ethernet.
 # Supports:
 # - ARP for IPv4 over Ethernet, simple ARP table
 # - IPv4 for not fragmented packets only, single static IP address
@@ -20,19 +20,19 @@ from enc28j60 import enc28j60
 import struct
 
 
-ETH_TYPE_IP4   = const(0x0800)
-ETH_TYPE_ARP   = const(0x0806)
-ETH_80211Q_TAG = const(0x8100)
+ETH_TYPE_IP4        = const(0x0800)
+ETH_TYPE_ARP        = const(0x0806)
+ETH_80211Q_TAG      = const(0x8100)
 
-ARP_HEADER_LEN = const(28)
-ARP_OP_REQUEST = const(1)
-ARP_OP_REPLY   = const(2)
+ARP_HEADER_LEN      = const(28)
+ARP_OP_REQUEST      = const(1)
+ARP_OP_REPLY        = const(2)
 
-IP4_TYPE_ICMP = const(1)
-IP4_TYPE_TCP  = const(6)
-IP4_TYPE_UDP  = const(17)
-IP4_ADDR_BCAST  = bytearray([255,255,255,255])
-IP4_ADDR_ZERO   = bytearray([0,0,0,0])
+IP4_TYPE_ICMP       = const(1)
+IP4_TYPE_TCP        = const(6)
+IP4_TYPE_UDP        = const(17)
+IP4_ADDR_BCAST      = bytearray([255,255,255,255])
+IP4_ADDR_ZERO       = bytearray([0,0,0,0])
 
 ICMP4_ECHO_REPLY    = const(0)
 ICMP4_UNREACHABLE   = const(3)
@@ -41,18 +41,14 @@ ICMP4_ECHO_REQUEST  = const(8)
 
 class Packet:
     '''This class stores received packet information'''
-    def __init__(self, ntw, frame):
+    def __init__(self, ntw, frame, frame_len):
         self.ntw = ntw
         self.frame = memoryview(frame)
+        self.frame_len = frame_len
 
 
 def procArp(pkt):
-    offset = pkt.eth_offset
-    hrtype, prtype, hrlen, prlen, oper = struct.unpack("!HHBBH", pkt.frame[0+offset:8+offset])
-    sha = pkt.frame[8+offset:14+offset]
-    spa = pkt.frame[14+offset:18+offset]
-    tha = pkt.frame[18+offset:24+offset]
-    tpa = pkt.frame[24+offset:28+offset]
+    hrtype, prtype, hrlen, prlen, oper, sha, spa, tha, tpa = struct.unpack_from("!HHBBH6s4s6s4s", pkt.frame, pkt.eth_offset)
 
     print(f'Rx ARP oper={oper}')
 
@@ -166,19 +162,14 @@ def procIcmp4(pkt):
 
 
 def procIp4(pkt):
-    offset = pkt.eth_offset
-    ip_hdr = struct.unpack("!BBHHHBBH", pkt.frame[0+offset:12+offset])
-    pkt.ip_src_addr = pkt.frame[12+offset:16+offset]
-    pkt.ip_dst_addr = pkt.frame[16+offset:20+offset]
-    pkt.ip_ver = (ip_hdr[0] >> 4) & 0xF
-    pkt.ip_hdrlen = (ip_hdr[0] & 0xF) << 2
-    pkt.ip_totlen = ip_hdr[2]
-    pkt.ip_proto = ip_hdr[6]
+    ip_ver_len, _, pkt.ip_totlen, _, ip_flags_fragoffset, ip_ttl, pkt.ip_proto, ip_hdr_chksum, pkt.ip_src_addr, pkt.ip_dst_addr = struct.unpack_from("!BBHHHBBH4s4s", pkt.frame, pkt.eth_offset)
+
+    pkt.ip_ver = (ip_ver_len >> 4) & 0xF
+    pkt.ip_hdrlen = (ip_ver_len & 0xF) << 2
     pkt.ip_offset = pkt.eth_offset + pkt.ip_hdrlen
     pkt.ip_maxoffset = pkt.eth_offset + pkt.ip_totlen
-    pkt.ntw.ip4RxCount += 1
 
-    #print('ip_hdr', ip_hdr, pkt.ip_hdrlen, pkt.ip_dst_addr[0], pkt.ip_dst_addr[1], pkt.ip_dst_addr[2], pkt.ip_dst_addr[3])
+    pkt.ntw.ip4RxCount += 1
 
     if 4 != pkt.ip_ver:
         print(f'ip_ver={pkt.ip_ver} not supported!')
@@ -193,8 +184,8 @@ def procIp4(pkt):
         #print(f'IPv4 chksm={chksm} invalid!')
         #return
 
-    flags_mf = (ip_hdr[4] >> 13) & 0x01
-    fragOffset = (ip_hdr[4] & 0x1FFF) << 3
+    flags_mf = (ip_flags_fragoffset >> 13) & 0x01
+    fragOffset = (ip_flags_fragoffset & 0x1FFF) << 3
     if (0 != flags_mf) or (0 != fragOffset):
         print(f'Fragmented IPv4 not supported: fragOffset={fragOffset}, flags_mf={flags_mf}')
         return
@@ -213,23 +204,23 @@ def procIp4(pkt):
 
 
 def printEthPkt(pkt):
-    print('DST:', ":".join("{:02x}".format(c) for c in pkt[0:6]),
-          'SRC:', ":".join("{:02x}".format(c) for c in pkt[6:12]),
-          'Type:', ":".join("{:02x}".format(c) for c in pkt[12:14]),
-          'len:', len(pkt),
-          'FCS', ":".join("{:02x}".format(c) for c in pkt[-4:]))
+    print('DST:', ":".join("{:02x}".format(c) for c in pkt.frame[0:6]),
+          'SRC:', ":".join("{:02x}".format(c) for c in pkt.frame[6:12]),
+          'Type:', ":".join("{:02x}".format(c) for c in pkt.frame[12:14]),
+          'len:', pkt.frame_len,
+          'FCS', ":".join("{:02x}".format(c) for c in pkt.frame[pkt.frame_len:pkt.frame_len+4]))
 
 
 def procEth(pkt):
-    #printEthPkt(pkt.frame)
+    #printEthPkt(pkt)
 
     pkt.eth_dst = pkt.frame[0:6]
     pkt.eth_src = pkt.frame[6:12]
-    pkt.eth_type = struct.unpack("!H", pkt.frame[12:14])[0]
+    pkt.eth_type, = struct.unpack_from("!H", pkt.frame, 12)
     pkt.eth_offset = 14
 
     if ETH_80211Q_TAG == pkt.eth_type:
-        pkt.eth_type = struct.unpack("!H", pkt.frame[14:16])[0]
+        pkt.eth_type, = struct.unpack_from("!H", pkt.frame, 14)
         pkt.eth_offset = 16
 
     if ETH_TYPE_IP4 == pkt.eth_type:
@@ -262,7 +253,7 @@ def makeUdp4Hdr(srcIp, srcPort, dstIp, dstPort, data):
 
 def procUdp4(pkt, bcast=False):
     offset = pkt.ip_offset
-    pkt.udp_srcPort, pkt.udp_dstPort, udpLen, chksm_rx = struct.unpack('!HHHH', pkt.frame[offset:offset+8])
+    pkt.udp_srcPort, pkt.udp_dstPort, udpLen, chksm_rx = struct.unpack_from('!HHHH', pkt.frame, offset)
     pkt.udp_dataLen = udpLen - 8
     pkt.udp_data = memoryview(pkt.frame[offset+8:offset+udpLen])
 
@@ -337,7 +328,7 @@ class Ntw:
             if 0 >= rxLen:
                 print(f'Rx ERROR {rxLen}')
                 continue
-            procEth(Packet(self, self.rxBuff))
+            procEth(Packet(self, self.rxBuff, rxLen))
 
     def txPkt(self, msg):
         '''Function to tx packet to NIC'''
@@ -378,12 +369,34 @@ class Ntw:
         n = self.txPkt(msg)
         return n
 
+    def isLocalIp4(self, ip4Addr):
+        for i in range(4):
+            if (ip4Addr[i] & self.netIp4Mask[i]) != (self.myIp4Addr[i] & self.netIp4Mask[i]):
+                return False
+        return True
+
+    def connectIp4(self, ip4Addr):
+        if self.isLocalIp4(ip4Addr):
+            self.sendArpRequest(ip4Addr)
+        elif False == self.isConnectedIp4(self.gwIp4Addr):
+            self.sendArpRequest(self.gwIp4Addr)
+
+    def isConnectedIp4(self, ip4Addr):
+        if self.isLocalIp4(ip4Addr):
+            return None != self.getArpEntry(ip4Addr)
+        else:
+            return None != self.getArpEntry(self.gwIp4Addr)
+
     def sendUdp4(self, tgt_ip, tgt_port, data, src_port=0):
         msg = []
 
-        tgtMac = self.getArpEntry(tgt_ip)
+        if self.isLocalIp4(tgt_ip):
+            tgtMac = self.getArpEntry(tgt_ip)
+        else:
+            tgtMac = self.getArpEntry(self.gwIp4Addr)
+
         if None == tgtMac:
-            print('IP address not in ARP table!')
+            print(f'sendUdp4: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
             return -1
 
         msg.append(tgtMac)
