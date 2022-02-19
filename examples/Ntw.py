@@ -295,6 +295,7 @@ class Ntw:
         self.myIp4Addr = bytearray(4)
         self.netIp4Mask = bytearray(4)
         self.gwIp4Addr = bytearray(4)
+        self.configIp4Done = False
 
         # Stats
         self.ip4TxCount = 0
@@ -313,6 +314,10 @@ class Ntw:
         self.myIp4Addr = bytearray(myIp4Addr)
         self.netIp4Mask = bytearray(netIp4Mask)
         self.gwIp4Addr = bytearray(gwIp4Addr)
+        self.configIp4Done = True
+
+    def isIPv4Configured(self):
+        return self.configIp4Done
 
     def rxAllPkt(self):
         '''Function to rx and process all pending packets from NIC'''
