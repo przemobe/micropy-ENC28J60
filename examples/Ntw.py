@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
-# Copyright 2021 Przemyslaw Bereski https://github.com/przemobe/
+# Copyright 2021-2022 Przemyslaw Bereski https://github.com/przemobe/
 
 # This is version for MicroPython v1.17
 
@@ -284,10 +284,9 @@ def procUdp4(pkt, bcast=False):
 
 
 class Ntw:
-    def __init__(self):
+    def __init__(self, nicSpi, nicCsPin):
         self.rxBuff = bytearray(enc28j60.ENC28J60_ETH_RX_BUFFER_SIZE)
-        self.spi1 = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
-        self.nic = enc28j60.ENC28J60(self.spi1, Pin(13))
+        self.nic = enc28j60.ENC28J60(nicSpi, nicCsPin)
 
         # Eth settings
         self.myMacAddr = self.nic.getMacAddr()
@@ -437,7 +436,10 @@ class Udp4EchoServer:
 
 
 def main():
-    ntw = Ntw()
+    # Create network
+    nicSpi = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
+    nicCsPin = Pin(13)
+    ntw = Ntw(nicSpi, nicCsPin)
 
     # Set static IP address
     ntw.setIPv4([192,168,40,233], [255,255,255,0], [192,168,40,1])

@@ -11,9 +11,9 @@ Copy enc28j60.py to your board into /enc28j60 directory.
 
 ## Wiring
 Wiring requires pins for SPI: SCK, MISO, MOSI and ChipSelect and optionally Interrupt.
-Example wiring that uses SPI1 bus:
+Example wiring that uses SPI1 bus (any SPI bus can be used):
 
-| ENC28J60 Module | Rassperry Pi Pico | Notes |
+| ENC28J60 Module | RP2040 Board | Notes |
 | :-------------: |:-------------:| ---- |
 | VCC | 3V3 | requires up to 180 mA |
 | GND | GND | |
@@ -85,12 +85,18 @@ It also does not allow to run more than 2 threads at the time.
 It is hard to mimic network sockets in such environment. So polling mode seems reasonable solution.
 
 ```python
+from machine import Pin
+from machine import SPI
+import Ntw
+
 if __name__ == '__main__':
-    # Create network and initialize Ethernet driver
-    ntw = Ntw()
+    # Create network
+    nicSpi = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
+    nicCsPin = Pin(13)
+    ntw = Ntw.Ntw(nicSpi, nicCsPin)
 
     # Create UDP Echo server
-    udpecho = Udp4EchoServer(ntw)
+    udpecho = Ntw.Udp4EchoServer(ntw)
 
     # Bind UDP Echo server to UDP port 7
     ntw.registerUdp4Callback(7, udpecho)
