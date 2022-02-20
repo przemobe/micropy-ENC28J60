@@ -752,6 +752,21 @@ class ENC28J60:
     def IsLinkUp(self):
         return 0 != (self.ReadPhyReg(ENC28J60_PHSTAT2) & ENC28J60_PHSTAT2_LSTAT)
 
+    def IsLinkStateChanged(self):
+        # Read interrupt status register
+        status = self.ReadReg(ENC28J60_EIR)
+
+        # Check whether the link state has changed
+        if 0 == (status & ENC28J60_EIR_LINKIF):
+            return False
+
+        # Clear PHY interrupts flags
+        self.ReadPhyReg(ENC28J60_PHIR)
+
+        # Clear interrupt flag
+        self.ClearBit(ENC28J60_EIR, ENC28J60_EIR_LINKIF)
+        return True
+
     def GetRxPacketCnt(self):
         return self.ReadReg(ENC28J60_EPKTCNT)
 
