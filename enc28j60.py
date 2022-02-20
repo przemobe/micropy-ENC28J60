@@ -458,8 +458,9 @@ class ENC28J60:
     This class provides control over ENC28J60 Ethernet chips.
     '''
 
-    def __init__(self, spi, cs, macAddr = None, fullDuplex = True):
+    def __init__(self, spi, cs, macAddr = None, fullDuplex = True, enableMulticastRx = False):
         self.fullDuplex = fullDuplex
+        self.enableMulticastRx = enableMulticastRx
         self.revId = None
         self.tmpBytearray1B = bytearray(1)
         self.tmpBytearray2B = bytearray(2)
@@ -521,7 +522,10 @@ class ENC28J60:
         self.WriteReg(ENC28J60_ERXRDPTH, MSB(ENC28J60_RX_BUFFER_STOP))
 
         # Configure the receive filters
-        self.WriteReg(ENC28J60_ERXFCON, ENC28J60_ERXFCON_UCEN | ENC28J60_ERXFCON_CRCEN | ENC28J60_ERXFCON_HTEN | ENC28J60_ERXFCON_BCEN)
+        if self.enableMulticastRx:
+            self.WriteReg(ENC28J60_ERXFCON, ENC28J60_ERXFCON_UCEN | ENC28J60_ERXFCON_CRCEN | ENC28J60_ERXFCON_HTEN | ENC28J60_ERXFCON_BCEN | ENC28J60_ERXFCON_MCEN)
+        else:
+            self.WriteReg(ENC28J60_ERXFCON, ENC28J60_ERXFCON_UCEN | ENC28J60_ERXFCON_CRCEN | ENC28J60_ERXFCON_HTEN | ENC28J60_ERXFCON_BCEN)
 
         # Initialize the hash table
         self.WriteReg(ENC28J60_EHT0, 0x00)
