@@ -9,28 +9,31 @@ import Ntw
 import time
 
 
-class PeriodicSender:
+class PeriodicUdpSender:
     def __init__(self, ntw, tgt_addr, tgt_port, period_sec):
         self.ntw = ntw
         self.tgt_addr = bytes(tgt_addr)
         self.tgt_port = tgt_port
         self.period_sec = period_sec
+        # Define states: 0 - idle, 1 - connecting, 2 - connected
         self.state = 0
         self.init_time = 0
 
     def loop(self):
         ctime = time.time()
 
+        # State - idle
         if 0 == self.state:
-            if not ntw.isIPv4Configured():
+            if not self.ntw.isIPv4Configured():
                 return
             print('Connecting...')
-            ntw.connectIp4(self.tgt_addr)
+            self.ntw.connectIp4(self.tgt_addr)
             self.init_time = ctime
             self.state = 1
 
+        # State - connecting
         elif 1 == self.state:
-            if ntw.isConnectedIp4(self.tgt_addr):
+            if self.ntw.isConnectedIp4(self.tgt_addr):
                 print('Connected')
                 self.init_time = ctime
                 self.state = 2
@@ -38,6 +41,7 @@ class PeriodicSender:
             elif ctime - self.init_time > 3:
                 self.state = 0
 
+        # State - connected
         else: # 2 == self.state
             if ctime - self.init_time > self.period_sec:
                 self.send_data()
@@ -61,7 +65,7 @@ if __name__ == '__main__':
     ntw.setIPv4([192,168,40,233], [255,255,255,0], [192,168,40,1])
 
     # Create periodic sender
-    sender = PeriodicSender(ntw, [192,168,40,129], 514, 60)
+    sender = PeriodicUdpSender(ntw, [192,168,40,129], 514, 60)
 
     while True:
         ntw.rxAllPkt()
