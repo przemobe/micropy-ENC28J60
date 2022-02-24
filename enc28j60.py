@@ -20,13 +20,13 @@ import time
 import struct
 
 # RX buffer size
-ENC28J60_ETH_RX_BUFFER_SIZE          = const(1536)
+ENC28J60_ETH_RX_BUFFER_SIZE          = const(1518)
 
 # RX error codes
 ENC28J60_ETH_RX_ERR_UNSPECIFIED      = const(-1)
 
 # TX buffer size
-ENC28J60_ETH_TX_BUFFER_SIZE          = const(1536)
+ENC28J60_ETH_TX_BUFFER_SIZE          = const(1518)
 
 # TX error codes
 ENC28J60_ETH_TX_ERR_MSGSIZE          = const(-1)
