@@ -8,7 +8,7 @@
 # This file implements very simple IP stack for ENC28J60 ethernet.
 # Supports:
 # - ARP for IPv4 over Ethernet, simple ARP table
-# - IPv4 for not fragmented packets only, single static IP address
+# - IPv4 tx packets fragmentation, rx not fragmented packets only, single static IP address
 # - ICMPv4: rx Echo Request and tx Echo Response
 # - UDPv4: rx and tx
 
@@ -410,6 +410,8 @@ class Ntw:
 
     def sendUdp4(self, tgt_ip, tgt_port, data, src_port=0):
         msg = []
+        data = memoryview(data)
+        data_len = len(data)
 
         if self.isLocalIp4(tgt_ip):
             tgtMac = self.getArpEntry(tgt_ip)
@@ -423,11 +425,48 @@ class Ntw:
         msg.append(tgtMac)
         msg.append(self.myMacAddr)
         msg.append(ETH_TYPE_IP4_BYTES)
-        msg.append(makeIp4Hdr(self.myIp4Addr, tgt_ip, self.ip4TxCount, IP4_TYPE_UDP, UDP_HDR_SIZE + len(data)))
+
+        ip_totlen = IP4_HDR_NOOPT_SIZE + UDP_HDR_SIZE + data_len
+        if ip_totlen <= self.getEthMTU():
+            msg.append(makeIp4Hdr(self.myIp4Addr, tgt_ip, self.ip4TxCount, IP4_TYPE_UDP, UDP_HDR_SIZE + data_len))
+            msg.append(makeUdp4Hdr(self.myIp4Addr, src_port, tgt_ip, tgt_port, data))
+            msg.append(data)
+            n = self.txPkt(msg)
+        else:
+            # IP fragmentation
+            ip_mfo = ((self.getEthMTU() - IP4_HDR_NOOPT_SIZE) >> 3) << 3
+
+            n = 0
+            first_frag = True
+            data_frag_start = 0
+            data_frag_stop = ip_mfo - UDP_HDR_SIZE
+            ip_frag_offset = 0
+
+            while data_frag_start < data_len:
+                last_frag = data_frag_stop >= data_len
+                msg.append(makeIp4Hdr(self.myIp4Addr,
+                    tgt_ip,
+                    self.ip4TxCount,
+                    IP4_TYPE_UDP,
+                    data_len - data_frag_start if last_frag else ip_mfo,
+                    0 if last_frag else IP4_HDR_MF_FLAG,
+                    ip_frag_offset))
+                if first_frag:
+                    msg.append(makeUdp4Hdr(self.myIp4Addr, src_port, tgt_ip, tgt_port, data))
+                msg.append(data[data_frag_start:data_frag_stop])
+
+                n += self.txPkt(msg)
+
+                ip_frag_offset += ip_mfo >> 3
+                data_frag_start = data_frag_stop
+                data_frag_stop += ip_mfo
+                msg.pop()
+                msg.pop()
+                if first_frag:
+                    msg.pop()
+                    first_frag = False
+
         self.ip4TxCount += 1
-        msg.append(makeUdp4Hdr(self.myIp4Addr, src_port, tgt_ip, tgt_port, data))
-        msg.append(data)
-        n = self.txPkt(msg)
         return n
 
     def sendUdp4Bcast(self, tgt_port, src_port, data, src_ip4Addr=None):
