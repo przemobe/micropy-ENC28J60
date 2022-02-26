@@ -745,7 +745,7 @@ class ENC28J60:
         self.cs(1)
 
     def GetRevId(self):
-        if None == self.revId:
+        if self.revId is None:
             self.revId = self.ReadReg(ENC28J60_EREVID) & ENC28J60_EREVID_REV
         return self.revId
 
