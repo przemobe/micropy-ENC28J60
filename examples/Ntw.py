@@ -22,7 +22,11 @@ import struct
 
 ETH_TYPE_IP4        = const(0x0800)
 ETH_TYPE_ARP        = const(0x0806)
-ETH_80211Q_TAG      = const(0x8100)
+ETH_TYPE_8021Q      = const(0x8100)
+ETH_HDR_SIZE        = const(14)
+
+ETH_TYPE_IP4_BYTES  = bytes([ETH_TYPE_IP4 >> 8, ETH_TYPE_IP4 & 0xFF])
+ETH_ADDR_BCAST      = bytes([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])
 
 ARP_HEADER_LEN      = const(28)
 ARP_OP_REQUEST      = const(1)
@@ -31,12 +35,17 @@ ARP_OP_REPLY        = const(2)
 IP4_TYPE_ICMP       = const(1)
 IP4_TYPE_TCP        = const(6)
 IP4_TYPE_UDP        = const(17)
-IP4_ADDR_BCAST      = bytearray([255,255,255,255])
-IP4_ADDR_ZERO       = bytearray([0,0,0,0])
+IP4_HDR_DF_FLAG     = const(0x40)
+IP4_HDR_MF_FLAG     = const(0x20)
+IP4_HDR_NOOPT_SIZE  = const(20)
+IP4_ADDR_BCAST      = bytes([255,255,255,255])
+IP4_ADDR_ZERO       = bytes([0,0,0,0])
 
 ICMP4_ECHO_REPLY    = const(0)
 ICMP4_UNREACHABLE   = const(3)
 ICMP4_ECHO_REQUEST  = const(8)
+
+UDP_HDR_SIZE        = const(8)
 
 
 class Packet:
@@ -78,7 +87,7 @@ def makeArpReply(eth_dst, eth_src, ip_src, ip_dst):
 
 def makeArpRequest(eth_src, ip_src, ip_dst):
     rsp = []
-    rsp.append(bytearray([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
+    rsp.append(ETH_ADDR_BCAST)
     rsp.append(eth_src)
     rsp.append(bytearray([ETH_TYPE_ARP >> 8, ETH_TYPE_ARP, 0, 1, 8, 0, 6, 4, 0, ARP_OP_REQUEST]))
     rsp.append(eth_src)
@@ -99,17 +108,17 @@ def calcChecksum(data, startValue = 0):
     return ~chksm & 0xffff
 
 
-def makeIp4Hdr(src, tgt, ident, prot, dataLen, ttl=128, dscp=0, ecn=0):
-    totlen = 20 + dataLen
-    hdr = bytearray(20)
+def makeIp4Hdr(src, tgt, ident, prot, dataLen, flags=0, fragOffset=0, ttl=128, dscp=0, ecn=0):
+    totlen = IP4_HDR_NOOPT_SIZE + dataLen
+    hdr = bytearray(IP4_HDR_NOOPT_SIZE)
     hdr[0] = 0x45   # Version + IHL
     hdr[1] = (dscp << 2) | (ecn & 0x03)
     hdr[2] = totlen >> 8
     hdr[3] = totlen
     hdr[4] = ident >> 8
     hdr[5] = ident
-    hdr[6] = 0      # Flags + Fragment Offset
-    hdr[7] = 0      # Flags + Fragment Offset
+    hdr[6] = flags | ((fragOffset >> 8) & 0x1F)
+    hdr[7] = fragOffset & 0xFF
     hdr[8] = ttl
     hdr[9] = prot
     hdr[10] = 0
@@ -144,7 +153,7 @@ def sendIcmp4EchoReply(pkt):
     # Eth
     rsp.append(pkt.eth_src)
     rsp.append(pkt.ntw.myMacAddr)
-    rsp.append(bytearray([ETH_TYPE_IP4 >> 8, ETH_TYPE_IP4]))
+    rsp.append(ETH_TYPE_IP4_BYTES)
 
     rsp.append(ipHdr)
     rsp.append(icmpRepl)
@@ -175,7 +184,7 @@ def procIp4(pkt):
         print(f'ip_ver={pkt.ip_ver} not supported!')
         return
 
-    if 20 != pkt.ip_hdrlen:
+    if IP4_HDR_NOOPT_SIZE != pkt.ip_hdrlen:
         print(f'ip_hdrlen={pkt.ip_hdrlen} not supported!')
         return
 
@@ -208,7 +217,7 @@ def printEthPkt(pkt):
           'SRC:', ":".join("{:02x}".format(c) for c in pkt.frame[6:12]),
           'Type:', ":".join("{:02x}".format(c) for c in pkt.frame[12:14]),
           'len:', pkt.frame_len,
-          'FCS', ":".join("{:02x}".format(c) for c in pkt.frame[pkt.frame_len:pkt.frame_len+4]))
+          'FCS', ":".join("{:02x}".format(c) for c in pkt.frame[pkt.frame_len-4:pkt.frame_len]))
 
 
 def procEth(pkt):
@@ -217,11 +226,11 @@ def procEth(pkt):
     pkt.eth_dst = pkt.frame[0:6]
     pkt.eth_src = pkt.frame[6:12]
     pkt.eth_type, = struct.unpack_from("!H", pkt.frame, 12)
-    pkt.eth_offset = 14
+    pkt.eth_offset = ETH_HDR_SIZE
 
-    if ETH_80211Q_TAG == pkt.eth_type:
+    if ETH_TYPE_8021Q == pkt.eth_type:
         pkt.eth_type, = struct.unpack_from("!H", pkt.frame, 14)
-        pkt.eth_offset = 16
+        pkt.eth_offset += 2
 
     if ETH_TYPE_IP4 == pkt.eth_type:
         procIp4(pkt)
@@ -231,15 +240,14 @@ def procEth(pkt):
 
 
 def makeUdp4Hdr(srcIp, srcPort, dstIp, dstPort, data):
-    udpHdr = bytearray(8)
-    udpLen = len(data) + 8
+    udpLen = len(data) + UDP_HDR_SIZE
 
     chksm = sum(struct.unpack('!HH', srcIp))
     chksm += sum(struct.unpack('!HH', dstIp))
     chksm += IP4_TYPE_UDP + 2*udpLen + srcPort + dstPort
     chksm = calcChecksum(data, chksm)
 
-    udpHdr = bytearray(8)
+    udpHdr = bytearray(UDP_HDR_SIZE)
     udpHdr[0] = srcPort >> 8
     udpHdr[1] = srcPort
     udpHdr[2] = dstPort >> 8
@@ -254,8 +262,8 @@ def makeUdp4Hdr(srcIp, srcPort, dstIp, dstPort, data):
 def procUdp4(pkt, bcast=False):
     offset = pkt.ip_offset
     pkt.udp_srcPort, pkt.udp_dstPort, udpLen, chksm_rx = struct.unpack_from('!HHHH', pkt.frame, offset)
-    pkt.udp_dataLen = udpLen - 8
-    pkt.udp_data = memoryview(pkt.frame[offset+8:offset+udpLen])
+    pkt.udp_dataLen = udpLen - UDP_HDR_SIZE
+    pkt.udp_data = memoryview(pkt.frame[offset+UDP_HDR_SIZE:offset+udpLen])
 
     # find UDP client
     cb = None
@@ -264,7 +272,7 @@ def procUdp4(pkt, bcast=False):
     elif (True == bcast) and (pkt.udp_dstPort in pkt.ntw.udp4BcastBind):
         cb = pkt.ntw.udp4BcastBind[pkt.udp_dstPort]
 
-    if None == cb:
+    if cb is None:
         return
 
     # verify checksum
@@ -334,6 +342,15 @@ class Ntw:
                 continue
             procEth(Packet(self, self.rxBuff, rxLen))
 
+    def isLinkUp(self):
+        return self.nic.IsLinkUp()
+
+    def isLinkStateChanged(self):
+        return self.nic.IsLinkStateChanged()
+
+    def getEthMTU(self):
+        return 1500
+
     def txPkt(self, msg):
         '''Function to tx packet to NIC'''
         ## lock
@@ -342,13 +359,13 @@ class Ntw:
         return n
 
     def registerUdp4Callback(self, port, cb):
-        if None != cb:
+        if cb is not None:
             self.udp4UniBind[port] = cb
         else:
             self.udp4UniBind.pop(port, None)
 
     def registerUdp4BcastCallback(self, port, cb):
-        if None != cb:
+        if cb is not None:
             self.udp4BcastBind[port] = cb
         else:
             self.udp4BcastBind.pop(port, None)
@@ -387,9 +404,9 @@ class Ntw:
 
     def isConnectedIp4(self, ip4Addr):
         if self.isLocalIp4(ip4Addr):
-            return None != self.getArpEntry(ip4Addr)
+            return (self.getArpEntry(ip4Addr) is not None)
         else:
-            return None != self.getArpEntry(self.gwIp4Addr)
+            return (self.getArpEntry(self.gwIp4Addr) is not None)
 
     def sendUdp4(self, tgt_ip, tgt_port, data, src_port=0):
         msg = []
@@ -399,14 +416,14 @@ class Ntw:
         else:
             tgtMac = self.getArpEntry(self.gwIp4Addr)
 
-        if None == tgtMac:
+        if tgtMac is None:
             print(f'sendUdp4: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
             return -1
 
         msg.append(tgtMac)
         msg.append(self.myMacAddr)
-        msg.append(bytearray([ETH_TYPE_IP4 >> 8, ETH_TYPE_IP4]))
-        msg.append(makeIp4Hdr(self.myIp4Addr, tgt_ip, self.ip4TxCount, IP4_TYPE_UDP, 8 + len(data)))
+        msg.append(ETH_TYPE_IP4_BYTES)
+        msg.append(makeIp4Hdr(self.myIp4Addr, tgt_ip, self.ip4TxCount, IP4_TYPE_UDP, UDP_HDR_SIZE + len(data)))
         self.ip4TxCount += 1
         msg.append(makeUdp4Hdr(self.myIp4Addr, src_port, tgt_ip, tgt_port, data))
         msg.append(data)
@@ -416,12 +433,12 @@ class Ntw:
     def sendUdp4Bcast(self, tgt_port, src_port, data, src_ip4Addr=None):
         msg = []
         tgt_ip4Addr = IP4_ADDR_BCAST
-        if None == src_ip4Addr:
+        if src_ip4Addr is None:
             src_ip4Addr = IP4_ADDR_ZERO
-        msg.append(bytearray([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]))
+        msg.append(ETH_ADDR_BCAST)
         msg.append(self.myMacAddr)
-        msg.append(bytearray([ETH_TYPE_IP4 >> 8, ETH_TYPE_IP4]))
-        msg.append(makeIp4Hdr(src_ip4Addr, tgt_ip4Addr, self.ip4TxCount, IP4_TYPE_UDP, 8 + len(data)))
+        msg.append(ETH_TYPE_IP4_BYTES)
+        msg.append(makeIp4Hdr(src_ip4Addr, tgt_ip4Addr, self.ip4TxCount, IP4_TYPE_UDP, UDP_HDR_SIZE + len(data)))
         self.ip4TxCount += 1
         msg.append(makeUdp4Hdr(src_ip4Addr, src_port, tgt_ip4Addr, tgt_port, data))
         msg.append(data)
