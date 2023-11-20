@@ -8,7 +8,7 @@
 # This file implements very simple IP stack for ENC28J60 ethernet.
 # Supports:
 # - ARP for IPv4 over Ethernet, simple ARP table
-# - IPv4 tx packets fragmentation, rx not fragmented packets only, single static IP address
+# - IPv4: rx not fragmented packets only, tx fragmented packets, single IP address
 # - ICMPv4: rx Echo Request and tx Echo Response
 # - UDPv4: rx and tx
 
@@ -59,17 +59,17 @@ class Packet:
 def procArp(pkt):
     hrtype, prtype, hrlen, prlen, oper, sha, spa, tha, tpa = struct.unpack_from("!HHBBH6s4s6s4s", pkt.frame, pkt.eth_offset)
 
-    print(f'Rx ARP oper={oper}')
+    print(f'[ARP] Rx oper={oper}')
 
     if ARP_OP_REQUEST == oper:
         if tpa == pkt.ntw.myIp4Addr:
-            print(f'Rx ARP_REQUEST for my IP from IP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]}!')
+            print(f'[ARP] Rx REQUEST for my IP from IP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]}!')
             reply = makeArpReply(pkt.eth_src, pkt.ntw.myMacAddr, pkt.ntw.myIp4Addr, spa)
             n = pkt.ntw.txPkt(reply)
             if 0 > n:
-                print(f'Fail to send ARP REPLY {n}')
+                print(f'[ARP] Fail to send REPLY: error code {n}')
     elif ARP_OP_REPLY == oper:
-        print(f'ARP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]} is at {sha[0]:02X}:{sha[1]:02X}:{sha[2]:02X}:{sha[3]:02X}:{sha[4]:02X}:{sha[5]:02X}')
+        print(f'[ARP] {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]} is at {sha[0]:02X}:{sha[1]:02X}:{sha[2]:02X}:{sha[3]:02X}:{sha[4]:02X}:{sha[5]:02X}')
         pkt.ntw.addArpEntry(spa, sha)
 
 
