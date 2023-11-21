@@ -164,10 +164,13 @@ def sendIcmp4EchoReply(pkt):
 
 def procIcmp4(pkt):
     offset = pkt.ip_offset
-    if ICMP4_ECHO_REQUEST == pkt.frame[offset]:
+    icmpType = pkt.frame[offset]
+    if ICMP4_ECHO_REQUEST == icmpType:
         sendIcmp4EchoReply(pkt)
+    elif ICMP4_UNREACHABLE == icmpType:
+        print(f'[ICMP4] Rx type={icmpType}(Destination Unreachable) code={pkt.frame[offset + 1]}')
     else:
-        print(f'Rx ICMP op={pkt.frame[offset]}')
+        print(f'[ICMP4] Rx type={icmpType}')
 
 
 def procIp4(pkt):
