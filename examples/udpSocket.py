@@ -56,6 +56,10 @@ class UdpSocket:
         return rxData # (buffer, remoteAddress)
 
 
+    def recv(bufSize):
+        return self.recvfrom(bufSize)[0]
+
+
     def setblocking(self, flag):
         # blocking is not supported.
         pass

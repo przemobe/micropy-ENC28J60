@@ -87,11 +87,12 @@ if __name__ == "__main__":
 
         # CoAP client - send one time request(s) to remote server after start
         ctime = time.time()
-        if (False == coapClient_doneFlag) and (ctime - coapClient_startTime > 1):
+        if (False == coapClient_doneFlag) and (ctime - coapClient_startTime > 1) and (ntw.isIPv4Configured()):
             startTime = ctime
             if not ntw.isConnectedIp4(remoteServerIpBytes):
                 ntw.connectIp4(remoteServerIpBytes)
             else:
-                #coap.get(remoteServerIpStr, remoteServerPort, ".well-known/core")
-                coap.get(remoteServerIpStr, remoteServerPort, "test")
+                #coap.get(remoteServerIpStr, remoteServerPort, '.well-known/core')
+                #coap.get(remoteServerIpStr, remoteServerPort, 'test')
+                coap.get(remoteServerIpStr, remoteServerPort, 'separate')
                 coapClient_doneFlag = True
