@@ -1,30 +1,34 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
-# Copyright 2022 Przemyslaw Bereski https://github.com/przemobe/
+# Copyright 2022-2023 Przemyslaw Bereski https://github.com/przemobe/
 
 from machine import Pin
 from machine import SPI
+from micropython import const
 import Ntw
 import time
 import struct
 
 # from datetime import date
 # (date(2000, 1, 1) - date(1900, 1, 1)).days * 24*60*60
-NTP_EPOCH_DELTA2000 = 3155673600
-NTP_EPOCH_DELTA1970 = 2208988800
+NTP_EPOCH_DELTA2000 = const(3155673600)
+NTP_EPOCH_DELTA1970 = const(2208988800)
 
 class SntpClient:
     '''Very simple SNTP client'''
 
-    def __init__(self, ntw, client_port, server_addr, server_port=123):
+    def __init__(self, ntw, client_port, server_addr, server_port=123, period=0):
         self.ntw = ntw
         self.client_port = client_port
         self.server_addr = bytes(server_addr)
         self.server_port = server_port
+        self.period = period # seconds
         # Define states: 0 - idle, 1 - connecting, 2 - await response, 3 - done
         self.state = 0
         self.init_time = 0
+        # Define output
+        self.datetimetuple = None
 
         # Register callback for response
         self.ntw.registerUdp4Callback(self.client_port, self.proc_response)
@@ -61,9 +65,12 @@ class SntpClient:
                 # Retry
                 self.state = 1
 
-        # State - done
+        # State - done, try next attempt after self.period secods
         else: # 3 == self.state
-            pass
+            if (0 < self.period) and (ctime - self.init_time > self.period):
+                # Register callback for response
+                self.ntw.registerUdp4Callback(self.client_port, self.proc_response)
+                self.state = 0
 
     def send_request(self):
         request = b'\x1b' + 47 * b'\0'
@@ -82,7 +89,14 @@ class SntpClient:
         self.state = 3
         t = struct.unpack('!12I', pkt.udp_data)[10]
         t -= NTP_EPOCH_DELTA1970
-        print(f'[SNTP] Response received: time={time.gmtime(t)}')
+
+        datetimetuple = time.gmtime(t)
+        datetimetuple = (datetimetuple[0] + 1970 - time.gmtime(0)[0],) + datetimetuple[1:]
+
+        print(f'[SNTP] Response received: time={datetimetuple}')
+        self.datetimetuple = datetimetuple
+        if 0 < self.period:
+            print(f'[SNTP] Refresh after {self.period} seconds')
 
         # Deregister callback for response
         self.ntw.registerUdp4Callback(self.client_port, None)
