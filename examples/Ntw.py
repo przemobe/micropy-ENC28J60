@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
-# Copyright 2021-2022 Przemyslaw Bereski https://github.com/przemobe/
+# Copyright 2021-2023 Przemyslaw Bereski https://github.com/przemobe/
 
 # This is version for MicroPython v1.17
 
@@ -270,10 +270,10 @@ def procUdp4(pkt, bcast=False):
 
     # find UDP client
     cb = None
-    if (False == bcast) and (pkt.udp_dstPort in pkt.ntw.udp4UniBind):
-        cb = pkt.ntw.udp4UniBind[pkt.udp_dstPort]
-    elif (True == bcast) and (pkt.udp_dstPort in pkt.ntw.udp4BcastBind):
-        cb = pkt.ntw.udp4BcastBind[pkt.udp_dstPort]
+    if (False == bcast):
+        cb = pkt.ntw.udp4UniBind.get(pkt.udp_dstPort)
+    else: # (True == bcast):
+        cb = pkt.ntw.udp4BcastBind.get(pkt.udp_dstPort)
 
     if cb is None:
         return
@@ -380,13 +380,10 @@ class Ntw:
             self.arpTable[struct.unpack('!I',ip)[0]] = bytearray(mac)
 
     def getArpEntry(self, ip):
-        if type(ip) != int:
-            ip = struct.unpack('!I',ip)[0]
-
-        if ip in self.arpTable:
-            return self.arpTable[ip]
+        if type(ip) == int:
+            return self.arpTable.get(ip)
         else:
-            return None
+            return self.arpTable.get(struct.unpack('!I',ip)[0])
 
     def sendArpRequest(self, ip4Addr):
         msg = makeArpRequest(self.myMacAddr, self.myIp4Addr, ip4Addr)
