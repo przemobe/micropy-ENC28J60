@@ -77,7 +77,7 @@ def makeArpReply(eth_dst, eth_src, ip_src, ip_dst):
     rsp = []
     rsp.append(eth_dst)
     rsp.append(eth_src)
-    rsp.append(bytearray([ETH_TYPE_ARP >> 8, ETH_TYPE_ARP, 0, 1, 8, 0, 6, 4, 0, ARP_OP_REPLY]))
+    rsp.append(bytes([ETH_TYPE_ARP >> 8, 0xFF & ETH_TYPE_ARP, 0, 1, 8, 0, 6, 4, 0, ARP_OP_REPLY]))
     rsp.append(eth_src)
     rsp.append(ip_src)
     rsp.append(eth_dst)
@@ -89,10 +89,10 @@ def makeArpRequest(eth_src, ip_src, ip_dst):
     rsp = []
     rsp.append(ETH_ADDR_BCAST)
     rsp.append(eth_src)
-    rsp.append(bytearray([ETH_TYPE_ARP >> 8, ETH_TYPE_ARP, 0, 1, 8, 0, 6, 4, 0, ARP_OP_REQUEST]))
+    rsp.append(bytes([ETH_TYPE_ARP >> 8, 0xFF & ETH_TYPE_ARP, 0, 1, 8, 0, 6, 4, 0, ARP_OP_REQUEST]))
     rsp.append(eth_src)
     rsp.append(ip_src)
-    rsp.append(bytearray(6))
+    rsp.append(bytes(6))
     rsp.append(ip_dst)
     return rsp
 
@@ -303,9 +303,9 @@ class Ntw:
         self.myMacAddr = self.nic.getMacAddr()
 
         # IPv4 settings
-        self.myIp4Addr = bytearray(4)
-        self.netIp4Mask = bytearray(4)
-        self.gwIp4Addr = bytearray(4)
+        self.myIp4Addr = bytes(4)
+        self.netIp4Mask = bytes(4)
+        self.gwIp4Addr = bytes(4)
         self.configIp4Done = False
 
         # Stats
@@ -322,9 +322,9 @@ class Ntw:
         print("ENC28J60 revision ID: 0x{:02x}".format(self.nic.GetRevId()))
 
     def setIPv4(self, myIp4Addr, netIp4Mask, gwIp4Addr):
-        self.myIp4Addr = bytearray(myIp4Addr)
-        self.netIp4Mask = bytearray(netIp4Mask)
-        self.gwIp4Addr = bytearray(gwIp4Addr)
+        self.myIp4Addr = bytes(myIp4Addr)
+        self.netIp4Mask = bytes(netIp4Mask)
+        self.gwIp4Addr = bytes(gwIp4Addr)
         self.configIp4Done = True
 
     def isIPv4Configured(self):
@@ -375,9 +375,9 @@ class Ntw:
 
     def addArpEntry(self, ip, mac):
         if type(ip) == int:
-            self.arpTable[ip] = bytearray(mac)
+            self.arpTable[ip] = bytes(mac)
         else:
-            self.arpTable[struct.unpack('!I',ip)[0]] = bytearray(mac)
+            self.arpTable[struct.unpack('!I',ip)[0]] = bytes(mac)
 
     def getArpEntry(self, ip):
         if type(ip) == int:
