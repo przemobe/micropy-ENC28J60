@@ -274,6 +274,12 @@ class Dhcp4Client():
             ctx.ntw.setIPv4(ctx.yiaddr, rxMsg.options[DHCP4_OPT_SUBNETMASK], rxMsg.options[DHCP4_OPT_ROUTER])
             ctx.ntw.addArpEntry(ctx.siaddr, pkt.eth_src)
 
+            # set DNS server address
+            a = rxMsg.options.get(DHCP4_OPT_DNS_SVRS)
+            if a is not None:
+                print(f'[DHCP-C] DNS_SVRS {a[0]}.{a[1]}.{a[2]}.{a[3]}')
+                ctx.ntw.setDnsSrvIpv4(a)
+
             # set timers
             '''
             Times T1 and T2 are configurable by the server through options.  T1
@@ -385,6 +391,12 @@ class Dhcp4Client():
             ctx.ntw.setIPv4(ctx.yiaddr, rxMsg.options[DHCP4_OPT_SUBNETMASK], rxMsg.options[DHCP4_OPT_ROUTER])
             ctx.ntw.addArpEntry(ctx.siaddr, pkt.eth_src)
 
+            # set DNS server address
+            a = rxMsg.options.get(DHCP4_OPT_DNS_SVRS)
+            if a is not None:
+                print(f'[DHCP-C] DNS_SVRS {a[0]}.{a[1]}.{a[2]}.{a[3]}')
+                ctx.ntw.setDnsSrvIpv4(a)
+
             # set timers
             '''
             Times T1 and T2 are configurable by the server through options.  T1
@@ -415,6 +427,7 @@ class Dhcp4Client():
         self.state = Dhcp4Client.ClientState_Init()
         self.ntw = ntw
         self.name = name
+        self.options = bytes([DHCP4_OPT_SUBNETMASK, DHCP4_OPT_ROUTER, DHCP4_OPT_DNS_SVRS])
 
     def proc_rx_pkt(self, pkt):
         self.state.proc_rx_pkt(self, pkt)
@@ -428,7 +441,7 @@ class Dhcp4Client():
         if self.name and len(self.name):
             packet.options[DHCP4_OPT_HOSTNAME] = self.name.encode()
         packet.options[DHCP4_OPT_MAXMSGSIZE] = struct.pack('!H', self.ntw.getEthMTU())
-        packet.options[DHCP4_OPT_PARAM_REQ] = bytes([DHCP4_OPT_SUBNETMASK, DHCP4_OPT_ROUTER])
+        packet.options[DHCP4_OPT_PARAM_REQ] = self.options
         packet.fields[DHCP4_MSG_FIELD_OP] = DHCP4_OP_REQUEST
         packet.fields[DHCP4_MSG_FIELD_XID] = self.xid
         packet.fields[DHCP4_MSG_FIELD_FLAGS] = DHCP4_FLAG_BROADCAST
@@ -446,7 +459,7 @@ class Dhcp4Client():
         if self.name and len(self.name):
             packet.options[DHCP4_OPT_HOSTNAME] = self.name.encode()
         packet.options[DHCP4_OPT_MAXMSGSIZE] = struct.pack('!H', self.ntw.getEthMTU())
-        packet.options[DHCP4_OPT_PARAM_REQ] = bytes([DHCP4_OPT_SUBNETMASK, DHCP4_OPT_ROUTER])
+        packet.options[DHCP4_OPT_PARAM_REQ] = self.options
         packet.fields[DHCP4_MSG_FIELD_OP] = DHCP4_OP_REQUEST
         packet.fields[DHCP4_MSG_FIELD_XID] = self.xid
         packet.fields[DHCP4_MSG_FIELD_FLAGS] = DHCP4_FLAG_BROADCAST
@@ -463,7 +476,7 @@ class Dhcp4Client():
         if self.name and len(self.name):
             packet.options[DHCP4_OPT_HOSTNAME] = self.name.encode()
         packet.options[DHCP4_OPT_MAXMSGSIZE] = struct.pack('!H', self.ntw.getEthMTU())
-        packet.options[DHCP4_OPT_PARAM_REQ] = bytes([DHCP4_OPT_SUBNETMASK, DHCP4_OPT_ROUTER])
+        packet.options[DHCP4_OPT_PARAM_REQ] = self.options
         packet.fields[DHCP4_MSG_FIELD_OP] = DHCP4_OP_REQUEST
         packet.fields[DHCP4_MSG_FIELD_XID] = self.xid
         packet.fields[DHCP4_MSG_FIELD_FLAGS] = 0

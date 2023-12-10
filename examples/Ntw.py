@@ -307,6 +307,7 @@ class Ntw:
         self.netIp4Mask = bytes(4)
         self.gwIp4Addr = bytes(4)
         self.configIp4Done = False
+        self.dnsSrv4Addr = None
 
         # Stats
         self.ip4TxCount = 0
@@ -329,6 +330,12 @@ class Ntw:
 
     def isIPv4Configured(self):
         return self.configIp4Done
+
+    def setDnsSrvIpv4(self, dnsSrv4Addr):
+        self.dnsSrv4Addr = bytes(dnsSrv4Addr)
+
+    def getDnsSrvIpv4(self):
+        return self.dnsSrv4Addr
 
     def rxAllPkt(self):
         '''Function to rx and process all pending packets from NIC'''
