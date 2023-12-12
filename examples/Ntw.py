@@ -11,6 +11,7 @@
 # - IPv4: rx not fragmented packets only, tx fragmented packets, single IP address
 # - ICMPv4: rx Echo Request and tx Echo Response
 # - UDPv4: rx and tx
+# - TCPv4: rx and tx
 
 
 from machine import Pin
@@ -46,6 +47,9 @@ ICMP4_UNREACHABLE   = const(3)
 ICMP4_ECHO_REQUEST  = const(8)
 
 UDP_HDR_SIZE        = const(8)
+
+TCP_HDR_NOOPT_FMT   = '!HHIIHHHH'
+TCP_HDR_NOOPT_SIZE  = const(20)
 
 
 class Packet:
@@ -207,7 +211,7 @@ def procIp4(pkt):
         if IP4_TYPE_ICMP == pkt.ip_proto:
             procIcmp4(pkt)
         elif IP4_TYPE_TCP == pkt.ip_proto:
-            pass
+            procTcp4(pkt)
         elif IP4_TYPE_UDP == pkt.ip_proto:
             procUdp4(pkt, bcast=False)
     elif pkt.ip_dst_addr == IP4_ADDR_BCAST:
@@ -287,10 +291,58 @@ def procUdp4(pkt, bcast=False):
         if 0 == chksm:
             chksm = 0xFFFF
         if (chksm != chksm_rx):
-            print(f'Invalid UDP chksm: rx={chksm_rx:04X} calc=0x{chksm:04X}')
+            print(f'[UDP4] Invalid checksum!')
             return
 
     # call UDP client
+    cb(pkt)
+
+
+def makeTcp4Hdr(srcIp, srcPort, dstIp, dstPort, data, tcp_seq_num, tcp_ack_num, flags, tcp_window_size, tcp_options_raw):
+    tcpHdrLen = TCP_HDR_NOOPT_SIZE + len(tcp_options_raw)
+    do_flags = (0xF000 & (tcpHdrLen << 10)) | (0x1FF & flags)
+    tcpLen = tcpHdrLen + len(data)
+
+    chksm = sum(struct.unpack('!HH', srcIp))
+    chksm += sum(struct.unpack('!HH', dstIp))
+    chksm += IP4_TYPE_TCP + tcpLen
+
+    hdr = bytearray(struct.pack(TCP_HDR_NOOPT_FMT, srcPort, dstPort, tcp_seq_num, tcp_ack_num, do_flags, tcp_window_size, 0, 0))
+    hdr += tcp_options_raw
+    chksm += sum(struct.unpack(f'!{(tcpHdrLen >> 1)}H', hdr))
+    chksm = calcChecksum(data, chksm)
+
+    hdr[16] = chksm >> 8
+    hdr[17] = chksm & 0xFF
+
+    return hdr
+
+
+def procTcp4(pkt):
+    offset = pkt.ip_offset
+    pkt.tcp_srcPort, pkt.tcp_dstPort, pkt.tcp_seq_num, pkt.tcp_ack_num, do_flags, pkt.tcp_window_size, chksm_rx, pkt.tcp_urg_ptr = struct.unpack_from(TCP_HDR_NOOPT_FMT, pkt.frame, offset)
+    pkt.tcp_data_offset = do_flags >> 10
+    pkt.tcp_flags = do_flags & 0x1FF
+    pkt.tcp_options_raw = memoryview(pkt.frame[offset + TCP_HDR_NOOPT_SIZE: offset + pkt.tcp_data_offset])
+    pkt.tcp_data = memoryview(pkt.frame[offset + pkt.tcp_data_offset: pkt.ip_maxoffset])
+
+    # find TCP client
+    cb = pkt.ntw.tcp4UniBind.get(pkt.tcp_dstPort)
+
+    if cb is None:
+        return
+
+    # verify checksum
+    tcpLen = pkt.ip_maxoffset - offset
+    chksm = sum(struct.unpack('!HH', pkt.ip_src_addr))
+    chksm += sum(struct.unpack('!HH', pkt.ip_dst_addr))
+    chksm += IP4_TYPE_TCP + tcpLen
+    chksm = calcChecksum(memoryview(pkt.frame[offset: pkt.ip_maxoffset]), chksm)
+    if 0 != chksm:
+        print(f'[TCP4] Invalid checksum!')
+        return
+
+    # call TCP client
     cb(pkt)
 
 
@@ -316,6 +368,7 @@ class Ntw:
         self.arpTable = {}
         self.udp4UniBind = {}   # {port:callback(Pkt)}
         self.udp4BcastBind = {} # {port:callback(Pkt)}
+        self.tcp4UniBind = {}   # {port:callback(Pkt)}
 
         self.nic.init()
 
@@ -379,6 +432,12 @@ class Ntw:
             self.udp4BcastBind[port] = cb
         else:
             self.udp4BcastBind.pop(port, None)
+
+    def registerTcp4Callback(self, port, cb):
+        if cb is not None:
+            self.tcp4UniBind[port] = cb
+        else:
+            self.tcp4UniBind.pop(port, None)
 
     def addArpEntry(self, ip, mac):
         if type(ip) == int:
@@ -489,6 +548,35 @@ class Ntw:
         msg.append(makeUdp4Hdr(src_ip4Addr, src_port, tgt_ip4Addr, tgt_port, data))
         msg.append(data)
         n = self.txPkt(msg)
+        return n
+
+
+    def sendTcp4(self, tgt_ip, tgt_port, src_port, data, tcp_seq_num, tcp_ack_num, flags, tcp_window_size = 1024, tcp_options_raw = bytes(0)):
+        msg = []
+        tcp_options_len = len(tcp_options_raw)
+        data = memoryview(data)
+        data_len = len(data)
+
+        if self.isLocalIp4(tgt_ip):
+            tgtMac = self.getArpEntry(tgt_ip)
+        else:
+            tgtMac = self.getArpEntry(self.gwIp4Addr)
+
+        if tgtMac is None:
+            print(f'sendTcp4: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
+            return -1
+
+        msg.append(tgtMac)
+        msg.append(self.myMacAddr)
+        msg.append(ETH_TYPE_IP4_BYTES)
+
+        msg.append(makeIp4Hdr(self.myIp4Addr, tgt_ip, self.ip4TxCount, IP4_TYPE_TCP, TCP_HDR_NOOPT_SIZE + tcp_options_len + data_len))
+        msg.append(makeTcp4Hdr(self.myIp4Addr, src_port, tgt_ip, tgt_port, data, tcp_seq_num, tcp_ack_num, flags, tcp_window_size, tcp_options_raw))
+
+        msg.append(data)
+        n = self.txPkt(msg)
+
+        self.ip4TxCount += 1
         return n
 
 
