@@ -38,7 +38,7 @@ class UdpSocket:
                 print(f'[UdpSocket] Not reachable address: {address[0]}!')
             return -1
 
-        n = self.ntw.sendUdp4(addressIp, address[1], txBytes, 5683)
+        n = self.ntw.sendUdp4(addressIp, address[1], txBytes, self.localPort)
         return n
 
 
