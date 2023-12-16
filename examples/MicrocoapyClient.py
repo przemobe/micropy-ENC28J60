@@ -37,15 +37,24 @@ def testRequestCallback(packet, senderIp, senderPort):
     coap.sendResponse(senderIp, senderPort, packet.messageid, 'This is test message response from ENC28J60 RP2.',
         microcoapy.COAP_RESPONSE_CODE.COAP_CONTENT, microcoapy.COAP_CONTENT_FORMAT.COAP_TEXT_PLAIN, packet.token)
 
+def ledToggleCallback(packet, senderIp, senderPort):
+    print(f'[CoAP] LED toggle received: {packet.toString()} from: {senderIp}:{senderPort}')
+    ledPin.toggle()
+    coap.sendResponse(senderIp, senderPort, packet.messageid, f'LED status: {ledPin.value()}.',
+        microcoapy.COAP_RESPONSE_CODE.COAP_CONTENT, microcoapy.COAP_CONTENT_FORMAT.COAP_TEXT_PLAIN, packet.token)
 
 def discoveryRequestCallback(packet, senderIp, senderPort):
     print(f'[CoAP] "well-known/core" received: {packet.toString()} from: {senderIp}:{senderPort}')
-    response = b'</test>;rt="test";ct=0'
+    response = b'</test>;rt="test";ct=0,</ledToggle>;rt="ledToggle";ct=0'
     coap.sendResponse(senderIp, senderPort, packet.messageid, response,
         microcoapy.COAP_RESPONSE_CODE.COAP_CONTENT, microcoapy.COAP_CONTENT_FORMAT.COAP_NONE, packet.token)
 
 
 if __name__ == "__main__":
+    # LED pin
+    ledPin = Pin(25, Pin.OUT)
+    ledPin.value(1)
+
     # Create network
     nicSpi = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11), miso=Pin(8))
     nicCsPin = Pin(13)
@@ -68,6 +77,7 @@ if __name__ == "__main__":
     coap = microcoapy.Coap()
     coap.responseCallback = receivedMessageCallback
     coap.addIncomingRequestCallback('test', testRequestCallback)
+    coap.addIncomingRequestCallback('ledToggle', ledToggleCallback)
     coap.addIncomingRequestCallback('.well-known/core', discoveryRequestCallback)
 
     coapSocket = UdpSocket(ntw, microcoapy.coap_macros._COAP_DEFAULT_PORT)
