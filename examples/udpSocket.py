@@ -28,17 +28,24 @@ class UdpSocket:
 
 
     def sendto(self, txBytes, address):
-        if self.debug:
-            print(f'[UdpSocket] Sending {len(txBytes)} bytes to: {str(address)}')
-        addressIp = bytes([int(x) for x in address[0].split('.')])
+        if isinstance(address[0], str):
+            addrIpBytes = bytes(int(i) & 0xFF for i in address[0].strip().split('.') if i.isdigit)
+        else:
+            addrIpBytes = bytes(address[0])
 
-        if not self.ntw.isConnectedIp4(addressIp):
-            self.ntw.connectIp4(addressIp)
+        if 4 != len(addrIpBytes):
+            raise TypeError(f'[UdpSocket] Unexpected IP address format')
+
+        if self.debug:
+            print(f'[UdpSocket] Sending {len(txBytes)} bytes to: {addrIpBytes[0]}.{addrIpBytes[1]}.{addrIpBytes[2]}.{addrIpBytes[3]}:{address[1]}')
+
+        if not self.ntw.isConnectedIp4(addrIpBytes):
+            self.ntw.connectIp4(addrIpBytes)
             if self.warning:
                 print(f'[UdpSocket] Not reachable address: {address[0]}!')
             return -1
 
-        n = self.ntw.sendUdp4(addressIp, address[1], txBytes, self.localPort)
+        n = self.ntw.sendUdp4(addrIpBytes, address[1], txBytes, self.localPort)
         return n
 
 
@@ -69,7 +76,7 @@ class UdpSocket:
         remoteAddress = (f'{pkt.ip_src_addr[0]}.{pkt.ip_src_addr[1]}.{pkt.ip_src_addr[2]}.{pkt.ip_src_addr[3]}', pkt.udp_srcPort)
 
         if self.debug:
-            print(f'[UdpSocket] Equeue received {len(pkt.udp_data)} bytes from: {str(remoteAddress)}')
+            print(f'[UdpSocket] Equeue received {len(pkt.udp_data)} bytes from: {remoteAddress[0]}:{remoteAddress[1]}')
 
         self.ntw.addArpEntry(pkt.ip_src_addr, pkt.eth_src)
         self.rxQueue.append((bytes(pkt.udp_data), remoteAddress))
