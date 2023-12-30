@@ -17,7 +17,7 @@ class PeriodicUdpSender:
         self.period_sec = period_sec
         # Define states: 0 - idle, 1 - connecting, 2 - connected
         self.state = 0
-        self.init_time = time.time()
+        self.init_time = 0
 
     def loop(self):
         ctime = time.time()
@@ -45,7 +45,7 @@ class PeriodicUdpSender:
         else: # 2 == self.state
             if ctime - self.init_time > self.period_sec:
                 self.send_data()
-                self.init_time += self.period_sec
+                self.init_time = ctime + self.period_sec
 
     def send_data(self):
         n = self.ntw.sendUdp4(self.tgt_addr, self.tgt_port, '<134>I am alive!'.encode())
