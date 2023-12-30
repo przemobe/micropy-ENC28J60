@@ -21,6 +21,12 @@ from enc28j60 import enc28j60
 import struct
 
 
+LOG_LEVEL_FATAL     = const(1)
+LOG_LEVEL_ERROR     = const(2)
+LOG_LEVEL_WARNING   = const(3)
+LOG_LEVEL_INFO      = const(4)
+LOG_LEVEL_DEBUG     = const(5)
+
 ETH_TYPE_IP4        = const(0x0800)
 ETH_TYPE_ARP        = const(0x0806)
 ETH_TYPE_8021Q      = const(0x8100)
@@ -63,17 +69,21 @@ class Packet:
 def procArp(pkt):
     hrtype, prtype, hrlen, prlen, oper, sha, spa, tha, tpa = struct.unpack_from("!HHBBH6s4s6s4s", pkt.frame, pkt.eth_offset)
 
-    print(f'[ARP] Rx oper={oper}')
+    if (LOG_LEVEL_DEBUG <= pkt.ntw.logArpLevel):
+        print(f'[ARP] Rx oper={oper}')
 
     if ARP_OP_REQUEST == oper:
         if tpa == pkt.ntw.myIp4Addr:
-            print(f'[ARP] Rx REQUEST for my IP from IP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]}!')
+            if (LOG_LEVEL_DEBUG <= pkt.ntw.logArpLevel):
+                print(f'[ARP] Rx REQUEST for my IP from IP {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]}!')
             reply = makeArpReply(pkt.eth_src, pkt.ntw.myMacAddr, pkt.ntw.myIp4Addr, spa)
             n = pkt.ntw.txPkt(reply)
             if 0 > n:
-                print(f'[ARP] Fail to send REPLY: error code {n}')
+                if (LOG_LEVEL_ERROR <= pkt.ntw.logArpLevel):
+                    print(f'[ARP] Fail to send REPLY: error code {n}')
     elif ARP_OP_REPLY == oper:
-        print(f'[ARP] {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]} is at {sha[0]:02X}:{sha[1]:02X}:{sha[2]:02X}:{sha[3]:02X}:{sha[4]:02X}:{sha[5]:02X}')
+        if (LOG_LEVEL_INFO <= pkt.ntw.logArpLevel):
+            print(f'[ARP] {spa[0]}.{spa[1]}.{spa[2]}.{spa[3]} is at {sha[0]:02X}:{sha[1]:02X}:{sha[2]:02X}:{sha[3]:02X}:{sha[4]:02X}:{sha[5]:02X}')
         pkt.ntw.addArpEntry(spa, sha)
 
 
@@ -169,12 +179,17 @@ def sendIcmp4EchoReply(pkt):
 def procIcmp4(pkt):
     offset = pkt.ip_offset
     icmpType = pkt.frame[offset]
+
     if ICMP4_ECHO_REQUEST == icmpType:
         sendIcmp4EchoReply(pkt)
+
     elif ICMP4_UNREACHABLE == icmpType:
-        print(f'[ICMP4] Rx type={icmpType}(Destination Unreachable) code={pkt.frame[offset + 1]}')
+        if (LOG_LEVEL_INFO <= pkt.ntw.logIcmp4Level):
+            print(f'[ICMP4] Rx type={icmpType}(Destination Unreachable) code={pkt.frame[offset + 1]}')
+
     else:
-        print(f'[ICMP4] Rx type={icmpType}')
+        if (LOG_LEVEL_DEBUG <= pkt.ntw.logIcmp4Level):
+            print(f'[ICMP4] Rx type={icmpType}')
 
 
 def procIp4(pkt):
@@ -188,39 +203,46 @@ def procIp4(pkt):
     pkt.ntw.ip4RxCount += 1
 
     if 4 != pkt.ip_ver:
-        print(f'ip_ver={pkt.ip_ver} not supported!')
+        if (LOG_LEVEL_WARNING <= pkt.ntw.logIp4Level):
+            print(f'[IP4] Rx version={pkt.ip_ver} not supported!')
         return
 
     if IP4_HDR_NOOPT_SIZE != pkt.ip_hdrlen:
-        print(f'ip_hdrlen={pkt.ip_hdrlen} not supported!')
+        if (LOG_LEVEL_WARNING <= pkt.ntw.logIp4Level):
+            print(f'[IP4] Rx hdrlen={pkt.ip_hdrlen} not supported!')
         return
 
-    #chksm = calcChecksum(pkt.frame[offset:offset+pkt.ip_hdrlen])
+    #chksm = calcChecksum(pkt.frame[pkt.eth_offset: pkt.eth_offset+pkt.ip_hdrlen])
     #if 0 != chksm:
-        #print(f'IPv4 chksm={chksm} invalid!')
+        #if (LOG_LEVEL_ERROR <= pkt.ntw.logIp4Level):
+            #print(f'[IP4] Rx invalid checksum!')
         #return
 
     flags_mf = (ip_flags_fragoffset >> 13) & 0x01
     fragOffset = (ip_flags_fragoffset & 0x1FFF) << 3
     if (0 != flags_mf) or (0 != fragOffset):
-        print(f'Fragmented IPv4 not supported: fragOffset={fragOffset}, flags_mf={flags_mf}')
+        if (LOG_LEVEL_WARNING <= pkt.ntw.logIp4Level):
+            print(f'[IP4] Rx fragmented packet not supported: fragOffset={fragOffset}, flags_mf={flags_mf}')
         return
 
     if pkt.ip_dst_addr == pkt.ntw.myIp4Addr:
-        print(f'Rx my IP proto={pkt.ip_proto}')
+        if (LOG_LEVEL_DEBUG <= pkt.ntw.logIp4Level):
+            print(f'[IP4] Rx my address protocol={pkt.ip_proto}')
+
         if IP4_TYPE_ICMP == pkt.ip_proto:
             procIcmp4(pkt)
         elif IP4_TYPE_TCP == pkt.ip_proto:
             procTcp4(pkt)
         elif IP4_TYPE_UDP == pkt.ip_proto:
             procUdp4(pkt, bcast=False)
+
     elif pkt.ip_dst_addr == IP4_ADDR_BCAST:
         if IP4_TYPE_UDP == pkt.ip_proto:
             procUdp4(pkt, bcast=True)
 
 
 def printEthPkt(pkt):
-    print('DST:', ":".join("{:02x}".format(c) for c in pkt.frame[0:6]),
+    print('[ETH] DST:', ":".join("{:02x}".format(c) for c in pkt.frame[0:6]),
           'SRC:', ":".join("{:02x}".format(c) for c in pkt.frame[6:12]),
           'Type:', ":".join("{:02x}".format(c) for c in pkt.frame[12:14]),
           'len:', pkt.frame_len,
@@ -228,7 +250,8 @@ def printEthPkt(pkt):
 
 
 def procEth(pkt):
-    #printEthPkt(pkt)
+    if (LOG_LEVEL_DEBUG <= pkt.ntw.logEthLevel):
+        printEthPkt(pkt)
 
     pkt.eth_dst = pkt.frame[0:6]
     pkt.eth_src = pkt.frame[6:12]
@@ -291,7 +314,8 @@ def procUdp4(pkt, bcast=False):
         if 0 == chksm:
             chksm = 0xFFFF
         if (chksm != chksm_rx):
-            print(f'[UDP4] Invalid checksum!')
+            if (LOG_LEVEL_ERROR <= pkt.ntw.logUdp4Level):
+                print(f'[UDP4] Rx invalid checksum!')
             return
 
     # call UDP client
@@ -339,7 +363,8 @@ def procTcp4(pkt):
     chksm += IP4_TYPE_TCP + tcpLen
     chksm = calcChecksum(memoryview(pkt.frame[offset: pkt.ip_maxoffset]), chksm)
     if 0 != chksm:
-        print(f'[TCP4] Invalid checksum!')
+        if (LOG_LEVEL_ERROR <= pkt.ntw.logTcp4Level):
+            print(f'[TCP4] Rx invalid checksum!')
         return
 
     # call TCP client
@@ -370,10 +395,19 @@ class Ntw:
         self.udp4BcastBind = {} # {port:callback(Pkt)}
         self.tcp4UniBind = {}   # {port:callback(Pkt)}
 
+        # Log level
+        self.logEthLevel = LOG_LEVEL_INFO
+        self.logArpLevel = LOG_LEVEL_INFO
+        self.logIp4Level = LOG_LEVEL_WARNING
+        self.logIcmp4Level = LOG_LEVEL_INFO
+        self.logUdp4Level = LOG_LEVEL_ERROR
+        self.logTcp4Level = LOG_LEVEL_ERROR
+
         self.nic.init()
 
-        print("MAC ADDR:", ":".join("{:02x}".format(c) for c in self.myMacAddr))
-        print("ENC28J60 revision ID: 0x{:02x}".format(self.nic.GetRevId()))
+        if (LOG_LEVEL_INFO <= self.logEthLevel):
+            print("[ETH] MAC ADDR:", ":".join("{:02x}".format(c) for c in self.myMacAddr))
+            print("[ETH] ENC28J60 revision ID: 0x{:02x}".format(self.nic.GetRevId()))
 
     def setIPv4(self, myIp4Addr, netIp4Mask, gwIp4Addr):
         self.myIp4Addr = bytes(myIp4Addr)
@@ -401,7 +435,8 @@ class Ntw:
             rxLen = self.nic.ReceivePacket(self.rxBuff)
             ## unlock
             if 0 >= rxLen:
-                print(f'Rx ERROR {rxLen}')
+                if (LOG_LEVEL_ERROR <= self.logEthLevel):
+                    print(f'[ETH] Rx ERROR={rxLen}')
                 continue
             procEth(Packet(self, self.rxBuff, rxLen))
 
@@ -485,7 +520,8 @@ class Ntw:
             tgtMac = self.getArpEntry(self.gwIp4Addr)
 
         if tgtMac is None:
-            print(f'sendUdp4: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
+            if (LOG_LEVEL_ERROR <= pkt.ntw.logUdp4Level):
+                print(f'[UDP4] Tx: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
             return -1
 
         msg.append(tgtMac)
@@ -563,7 +599,8 @@ class Ntw:
             tgtMac = self.getArpEntry(self.gwIp4Addr)
 
         if tgtMac is None:
-            print(f'sendTcp4: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
+            if (LOG_LEVEL_ERROR <= pkt.ntw.logTcp4Level):
+                print(f'[TCP4] Tx: {tgt_ip[0]}.{tgt_ip[1]}.{tgt_ip[2]}.{tgt_ip[3]} not in ARP table!')
             return -1
 
         msg.append(tgtMac)
@@ -584,9 +621,11 @@ class Udp4EchoServer:
     '''Simple UDP Echo server'''
     def __init__(self, ntw):
         self.ntw = ntw
+        self.logLevel = LOG_LEVEL_INFO
 
     def __call__(self, pkt):
-        print(f'Rx UDP Echo req from IP {pkt.ip_src_addr[0]}.{pkt.ip_src_addr[1]}.{pkt.ip_src_addr[2]}.{pkt.ip_src_addr[3]}')
+        if (LOG_LEVEL_INFO <= self.logLevel):
+            print(f'[UDP4] Rx Echo req from IP {pkt.ip_src_addr[0]}.{pkt.ip_src_addr[1]}.{pkt.ip_src_addr[2]}.{pkt.ip_src_addr[3]}')
         pkt.ntw.addArpEntry(pkt.ip_src_addr, pkt.eth_src)
         pkt.ntw.sendUdp4(pkt.ip_src_addr, pkt.udp_srcPort, pkt.udp_data, pkt.udp_dstPort)
 
