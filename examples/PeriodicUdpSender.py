@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
-# Copyright 2021-2022 Przemyslaw Bereski https://github.com/przemobe/
+# Copyright 2021-2023 Przemyslaw Bereski https://github.com/przemobe/
 
 from machine import Pin
 from machine import SPI
@@ -17,7 +17,7 @@ class PeriodicUdpSender:
         self.period_sec = period_sec
         # Define states: 0 - idle, 1 - connecting, 2 - connected
         self.state = 0
-        self.init_time = 0
+        self.init_time = time.time()
 
     def loop(self):
         ctime = time.time()
