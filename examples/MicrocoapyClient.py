@@ -18,6 +18,7 @@ try:
 except ImportError:
     Dhcp4Client = None
 
+from uDnsClient import DnsClientNtw, DNS_RCODE_NOERROR
 import microcoapy
 from udpSocket import UdpSocket
 import time
@@ -50,6 +51,16 @@ def discoveryRequestCallback(packet, senderIp, senderPort):
         microcoapy.COAP_RESPONSE_CODE.COAP_CONTENT, microcoapy.COAP_CONTENT_FORMAT.COAP_NONE, packet.token)
 
 
+def dnsCallback(hostname, status, addr, ttl):
+    if DNS_RCODE_NOERROR != status or addr is None:
+        print(f'[DNS] Cannot resolve {hostname} name')
+        return
+
+    global remoteServerIp
+    remoteServerIp = addr
+    print(f'[DNS] {hostname} at {addr[0]}.{addr[1]}.{addr[2]}.{addr[3]}')
+
+
 if __name__ == "__main__":
     # LED pin
     ledPin = Pin(25, Pin.OUT)
@@ -60,19 +71,26 @@ if __name__ == "__main__":
     nicCsPin = Pin(13)
     ntw = Ntw.Ntw(nicSpi, nicCsPin)
 
+    # Setup DNS client
+    dns_client = DnsClientNtw(ntw, 56789)
+
     # Setup network IP layer
     dhcp_client = None
     if Dhcp4Client is None:
         # Set static IP address
         ntw.setIPv4([192,168,40,233], [255,255,255,0], [192,168,40,1])
+        dns_client.set_serv_addr(bytes([8,8,8,8]))
     else:
         # Create DHCP client
         dhcp_client = Dhcp4Client.Dhcp4Client(ntw)
 
+
     # Setup CoAP
-    remoteServerIpStr = "134.102.218.18"
-    remoteServerPort = 5683
-    remoteServerIpBytes = bytes([int(x) for x in remoteServerIpStr.split('.')])
+    global remoteServerIp
+    remoteServerIp = None
+    remoteServerName = 'coap.me'
+    dns_client.resolve_host_name(remoteServerName, callback=dnsCallback)
+    remoteServerPort = microcoapy.coap_macros._COAP_DEFAULT_PORT #5683
 
     coap = microcoapy.Coap()
     coap.responseCallback = receivedMessageCallback
@@ -93,16 +111,20 @@ if __name__ == "__main__":
         if dhcp_client is not None:
             dhcp_client.loop()
 
+        dns_client.loop()
         coap.loop(False)
 
         # CoAP client - send one time request(s) to remote server after start
         ctime = time.time()
-        if (False == coapClient_doneFlag) and (ctime - coapClient_startTime > 1) and (ntw.isIPv4Configured()):
+        if not dns_client.is_serv_addr_set() and ntw.isIPv4Configured():
+            dns_client.set_serv_addr(ntw.getDnsSrvIpv4())
+
+        if (False == coapClient_doneFlag) and (ctime - coapClient_startTime > 1) and ntw.isIPv4Configured() and (remoteServerIp is not None):
             startTime = ctime
-            if not ntw.isConnectedIp4(remoteServerIpBytes):
-                ntw.connectIp4(remoteServerIpBytes)
+            if not ntw.isConnectedIp4(remoteServerIp):
+                ntw.connectIp4(remoteServerIp)
             else:
-                #coap.get(remoteServerIpStr, remoteServerPort, '.well-known/core')
-                #coap.get(remoteServerIpStr, remoteServerPort, 'test')
-                coap.get(remoteServerIpStr, remoteServerPort, 'separate')
+                #coap.get(remoteServerIp, remoteServerPort, '.well-known/core')
+                #coap.get(remoteServerIp, remoteServerPort, 'test')
+                coap.get(remoteServerIp, remoteServerPort, 'separate')
                 coapClient_doneFlag = True

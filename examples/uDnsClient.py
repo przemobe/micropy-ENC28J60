@@ -200,6 +200,10 @@ class DnsClientBase(DnsClientCore):
         self.server_port = server_port
 
 
+    def is_serv_addr_set(self):
+        return self.server_ip is not None
+
+
     def proc_rx_msg(self, rx_msg):
         # Function process received message
         ctime = time.time()
